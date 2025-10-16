@@ -1,0 +1,185 @@
+/* ===== Dark palette ===== */
+
+:root{
+
+  --bg: #0d1117;        /* page */
+
+  --panel: #111418;     /* panels / bars */
+
+  --panel-2: #14181e;   /* controls */
+
+  --text: #e6e7ea;
+
+  --muted: #a2a9b4;
+
+  --border: #1f2430;
+
+  --accent: #3b82f6;
+
+}
+
+
+/* page */
+
+html, body { background: var(--bg) !important; color: var(--text) !important; }
+
+
+/* labels / notes */
+
+.lbl{ width:140px; font-weight:500; }
+
+.small-note{ color:var(--muted); font-size:12px; margin:6px 0 10px 0; }
+
+.derived{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; margin-top:8px; }
+
+
+/* control bars (Tabs 2 & 4) + any “.bar” wrapper */
+
+.bar{
+
+  padding: 8px 12px;
+
+  background: var(--panel);
+
+  border: 1px solid var(--border);
+
+  border-radius: 10px;
+
+  margin: 6px 0 10px 0;
+
+}
+
+
+/* sticky bottom bar on Tab 3 (kept here too just in case) */
+
+.bar-sticky{
+
+  background: var(--panel);
+
+  border: 1px solid var(--border);
+
+  border-radius: 10px;
+
+}
+
+
+/* upload */
+
+.upload{
+
+  border: 1px dashed var(--muted);
+
+  color: var(--muted);
+
+  padding: 18px;
+
+  text-align: center;
+
+  border-radius: 8px;
+
+  background: var(--panel);
+
+}
+
+
+/* inputs / numeric boxes */
+
+input, .dash-input, .dbc input, .dbc .form-control{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border: 1px solid var(--border) !important;
+
+}
+
+
+/* dropdown (dcc.Dropdown with className="dropdown-dark") */
+
+.dropdown-dark .Select__control,
+
+.dropdown-dark .Select-control{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border-color: var(--border) !important;
+
+}
+
+.dropdown-dark .Select__single-value{ color: var(--text) !important; }
+
+.dropdown-dark .Select__menu,
+
+.dropdown-dark .Select-menu-outer{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border: 1px solid var(--border) !important;
+
+}
+
+.dropdown-dark .Select__option--is-focused{ background: #1a1f27 !important; }
+
+.dropdown-dark .Select__option--is-selected{ background: #253044 !important; }
+
+
+/* buttons */
+
+button, .btn{ border-radius: 10px !important; }
+
+
+/* Tabs container line */
+
+.tabs{ margin:10px; border-bottom: 1px solid var(--border); }
+
+
+/* dcc.Tabs core classes */
+
+.dash-tabs{
+
+  background: var(--bg);
+
+}
+
+.dash-tabs .tab{
+
+  background: var(--panel);
+
+  color: var(--muted);
+
+  border: 1px solid var(--border);
+
+  border-bottom: none;
+
+  border-radius: 10px 10px 0 0;
+
+  padding: 8px 14px;
+
+  margin-right: 6px;
+
+}
+
+.dash-tabs .tab--selected{
+
+  background: var(--panel-2);
+
+  color: var(--text);
+
+  border-color: var(--border);
+
+}
+
+
+/* Plotly graphs inherit figure theme from Python, but ensure host bg is dark */
+
+.js-plotly-plot, .dash-graph{
+
+  background: var(--panel) !important;
+
+}
+

@@ -1,0 +1,182 @@
+/* ===== Modern dark palette (works without bootstrap theme) ===== */
+
+:root{
+
+  --bg: #0d1117;        /* page background */
+
+  --panel: #111418;     /* panels / bars / graphs bg */
+
+  --panel-2: #14181e;   /* input boxes */
+
+  --text: #e6e7ea;
+
+  --muted: #a2a9b4;
+
+  --border: #1f2430;
+
+  --accent: #3b82f6;
+
+}
+
+
+/* page */
+
+html, body { background: var(--bg) !important; color: var(--text) !important; }
+
+
+/* wrappers used in layout */
+
+.lbl{ width:140px; font-weight:500; }
+
+.small-note{ color:var(--muted); font-size:12px; margin:6px 0 10px 0; }
+
+.derived{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; margin-top:8px; }
+
+
+/* generic bars (tab 2 & 4 control sections) */
+
+.bar{
+
+  padding: 10px 12px;
+
+  background: var(--panel) !important;
+
+  border: 1px solid var(--border) !important;
+
+  border-radius: 10px;
+
+  margin: 6px 0 12px 0;
+
+}
+
+
+/* sticky control bar on Tab 3 */
+
+.bar-sticky{
+
+  background: var(--panel) !important;
+
+  border: 1px solid var(--border) !important;
+
+  border-radius: 10px;
+
+  padding: 10px 12px;
+
+}
+
+
+/* upload area */
+
+.upload{
+
+  border: 1px dashed var(--muted) !important;
+
+  color: var(--muted);
+
+  padding: 18px;
+
+  text-align: center;
+
+  border-radius: 8px;
+
+  background: var(--panel);
+
+}
+
+
+/* inputs / numeric boxes / textareas */
+
+input, .dash-input, .dbc input, .dbc .form-control, textarea {
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border: 1px solid var(--border) !important;
+
+}
+
+
+/* dropdown (apply className="dropdown-dark" in layout) */
+
+.dropdown-dark .Select__control,
+
+.dropdown-dark .Select-control{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border-color: var(--border) !important;
+
+}
+
+.dropdown-dark .Select__single-value{ color: var(--text) !important; }
+
+.dropdown-dark .Select__menu,
+
+.dropdown-dark .Select-menu-outer{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border: 1px solid var(--border) !important;
+
+}
+
+.dropdown-dark .Select__option--is-focused{ background: #1a1f27 !important; }
+
+.dropdown-dark .Select__option--is-selected{ background: #253044 !important; }
+
+
+/* buttons */
+
+button, .btn{ border-radius: 10px !important; }
+
+
+/* Tabs — requires className="dash-tabs" on dcc.Tabs and
+
+   className="tab" selected_className="tab--selected" on every dcc.Tab */
+
+.tabs{ margin: 10px; border-bottom: 1px solid var(--border); }
+
+.dash-tabs{ background: var(--bg) !important; }
+
+.dash-tabs .tab{
+
+  background: var(--panel) !important;
+
+  color: var(--muted) !important;
+
+  border: 1px solid var(--border) !important;
+
+  border-bottom: none !important;
+
+  border-radius: 10px 10px 0 0 !important;
+
+  padding: 8px 14px !important;
+
+  margin-right: 6px !important;
+
+}
+
+.dash-tabs .tab--selected{
+
+  background: var(--panel-2) !important;
+
+  color: var(--text) !important;
+
+  border-color: var(--border) !important;
+
+}
+
+
+/* Graph host background */
+
+.js-plotly-plot, .dash-graph{
+
+  background: var(--panel) !important;
+
+}
+
