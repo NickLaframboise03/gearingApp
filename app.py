@@ -513,18 +513,19 @@ app.layout = html.Div([
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
 
-    dcc.Tabs(id="tabs", value="tab1", children=[
+    dcc.Tabs(
 
-        dcc.Tab(label="1) Vehicle & Simulation", value="tab1"),
+        id="tabs",
 
-        dcc.Tab(label="2) Gearing & Accel", value="tab2"),
+        value="tab1",
 
-        dcc.Tab(label="3) Maps & Sequences", value="tab3"),
+        parent_className="tabs",
 
-        dcc.Tab(label="4) Steady-State FE", value="tab4"),
+        children=[
 
-    ], parent_className="tabs"),
+            dcc.Tab(
 
+                label="1) Vehicle & Simulation",
 
     html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
 
@@ -534,34 +535,39 @@ app.layout = html.Div([
 
     html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
 
+                label="2) Gearing & Accel",
+
+                value="tab2",
+
+                children=html.Div(id="page-tab2", children=tab2_layout(v0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="3) Maps & Sequences",
+
+                value="tab3",
+
+                children=html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="4) Steady-State FE",
+
+                value="tab4",
+
+                children=html.Div(id="page-tab4", children=tab4_layout(v0)),
+
+            ),
+
+        ],
+
+    ),
+
 ])
-
-
-
-# ---------- Show/Hide pages ----------
-
-@callback(
-
-    Output("page-tab1", "style"),
-
-    Output("page-tab2", "style"),
-
-    Output("page-tab3", "style"),
-
-    Output("page-tab4", "style"),
-
-    Input("tabs", "value"),
-
-)
-
-def toggle_pages(active):
-
-    def st(which):  # helper
-
-        return {"display": "block"} if which == active else {"display": "none"}
-
-    return st("tab1"), st("tab2"), st("tab3"), st("tab4")
-
 
 
 # ---------- Utils ----------

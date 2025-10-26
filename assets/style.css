@@ -109,7 +109,11 @@ input, .dash-input, .dbc input, .dbc .form-control{
 
 }
 
-.dropdown-dark .Select__single-value{ color: var(--text) !important; }
+.dropdown-dark .Select__single-value,
+.dropdown-dark .Select-value-label,
+.dropdown-dark .css-1dimb5e-singleValue,
+.dropdown-dark .css-1uccc91-singleValue,
+.dropdown-dark .css-qc6sy-singleValue{ color: var(--text) !important; }
 
 .dropdown-dark .Select__menu,
 
