@@ -1,4 +1,3 @@
-import json
 
 from pathlib import Path
 
@@ -7,7 +6,7 @@ from typing import Dict, Any, List
 
 import numpy as np
 
-from dash import Dash, dcc, html, Input, Output, State, no_update, callback
+from dash import Dash, dcc, html, Input, Output, State, no_update, callback, ctx
 
 from dash.exceptions import PreventUpdate
 
@@ -288,27 +287,9 @@ def tab1_layout(v, eng):
 
                 html.Div(className="small-note", children=[
 
-                    f"Auto-loading engines from {ENG_DIR} (.m/.mat/.json). Drop files to add."
+                    f"Engines are auto-loaded from {ENG_DIR} (JSON library)."
 
-                ]),
-
-                dcc.Upload(
-
-                    id="upload-engine",
-
-                    children=html.Div(["Drag & Drop or ", html.A("Select .m / .mat / .json")]),
-
-                    multiple=True,
-
-                    className="upload"
-
-                ),
-
-                html.Br(),
-
-                dbc.Button("Download current engine as JSON", id="btn-download-json", color="info"),
-
-                dcc.Download(id="download-json")
+                ])
 
             ]), md=6)
 
@@ -326,7 +307,7 @@ def tab2_layout(_v):
 
             html.Label("Loads λ (space-separated)"),
 
-            dbc.Input(id="loads", type="text", value="0.2 0.4 0.6 0.8 1.0", style={"width": "260px"}),
+            dbc.Input(id="loads", type="text", value="0.2 0.4 0.6 0.8 1.0", style={"width": "200px"}),
 
             html.Span("  "),
 
@@ -336,7 +317,15 @@ def tab2_layout(_v):
 
         dbc.Row([
 
+            dbc.Col(dcc.Graph(id="ax-distance-time"), md=6),
+
             dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
+
+        ]),
+
+        dbc.Row([
+
+            dbc.Col(dcc.Graph(id="ax-speed-time-gear"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
 
@@ -524,64 +513,80 @@ app.layout = html.Div([
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
 
-    dcc.Tabs(id="tabs", value="tab1", children=[
+    dcc.Tabs(
 
-        dcc.Tab(label="1) Vehicle & Simulation", value="tab1"),
+        id="tabs",
 
-        dcc.Tab(label="2) Gearing & Accel", value="tab2"),
+        value="tab1",
 
-        dcc.Tab(label="3) Maps & Sequences", value="tab3"),
+        parent_className="tabs",
 
-        dcc.Tab(label="4) Steady-State FE", value="tab4"),
+        children=[
 
-    ], parent_className="tabs"),
+            dcc.Tab(
 
+                label="1) Vehicle & Simulation",
 
-    html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
+                value="tab1",
 
-    html.Div(id="page-tab2", children=tab2_layout(v0)),
+                children=html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
 
-    html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
+            ),
 
-    html.Div(id="page-tab4", children=tab4_layout(v0)),
+            dcc.Tab(
+
+                label="2) Gearing & Accel",
+
+                value="tab2",
+
+                children=html.Div(id="page-tab2", children=tab2_layout(v0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="3) Maps & Sequences",
+
+                value="tab3",
+
+                children=html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="4) Steady-State FE",
+
+                value="tab4",
+
+                children=html.Div(id="page-tab4", children=tab4_layout(v0)),
+
+            ),
+
+        ],
+
+    ),
 
 ])
-
-
-
-# ---------- Show/Hide pages ----------
-
-@callback(
-
-    Output("page-tab1", "style"),
-
-    Output("page-tab2", "style"),
-
-    Output("page-tab3", "style"),
-
-    Output("page-tab4", "style"),
-
-    Input("tabs", "value"),
-
-)
-
-def toggle_pages(active):
-
-    def st(which):  # helper
-
-        return {"display": "block"} if which == active else {"display": "none"}
-
-    return st("tab1"), st("tab2"), st("tab3"), st("tab4")
-
 
 
 # ---------- Utils ----------
 
 def dash_ctx_trigger():
-
-    from dash import callback_context as ctx
-
-    return (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else "")
+    try:
+        triggered = ctx.triggered_id
+    except Exception:
+        triggered = None
+    if triggered:
+        if isinstance(triggered, dict):
+            return triggered.get("id", "")
+        return str(triggered)
+    trig = getattr(ctx, "triggered", None) or []
+    if trig:
+        prop = trig[0].get("prop_id", "")
+        if prop:
+            return prop.split(".")[0]
+    return ""
 
 
 def _arr(a): return np.asarray(a, dtype=float)
@@ -671,9 +676,90 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
 
     return v, label, opts, [len(v["gears"])] if v["gears"] else []
 
+@callback(
+
+    Output("mass", "value"),
+
+    Output("cd", "value"),
+
+    Output("af", "value"),
+
+    Output("rho_air", "value"),
+
+    Output("rho_fuel", "value"),
+
+    Output("lhv_mjpkg", "value"),
+
+    Output("g", "value"),
+
+    Output("eta_dl", "value"),
+
+    Output("tire_w", "value"),
+
+    Output("tire_ar", "value"),
+
+    Output("tire_rim_in", "value"),
+
+    Output("fd", "value"),
+
+    Output("gear_ratios", "value"),
+
+    Output("idle_rpm", "value"),
+
+    Output("redline_rpm", "value"),
+
+    Input("store-vehicle", "data"),
+
+    prevent_initial_call=True
+
+)
+
+def sync_vehicle_inputs(v):
+
+    if not v:
+
+        raise PreventUpdate
+
+    ratios = " ".join(f"{g:g}" for g in v.get("gears", []))
+
+    return (
+
+        float(v.get("m", 0.0)),
+
+        float(v.get("Cd", 0.0)),
+
+        float(v.get("Af", 0.0)),
+
+        float(v.get("rho_air", 0.0)),
+
+        float(v.get("rho_fuel", 0.0)),
+
+        float(v.get("LHV", 0.0)) / 1e6,
+
+        float(v.get("g", 0.0)),
+
+        float(v.get("eta_dl", 0.0)),
+
+        float(v.get("tire_w", 0.0)),
+
+        float(v.get("tire_ar", 0.0)),
+
+        float(v.get("tire_rim_in", 0.0)),
+
+        float(v.get("fd", 0.0)),
+
+        ratios,
+
+        float(v.get("idle_rpm", 0.0)),
+
+        float(v.get("redline_rpm", 0.0))
+
+    )
 
 
-# ---------- Engine dropdown / upload / periodic rescan ----------
+
+
+# ---------- Engine dropdown / periodic rescan ----------
 
 @callback(
 
@@ -685,19 +771,15 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
 
     Input("engine-select", "value"),
 
-    Input("upload-engine", "contents"),
-
-    State("upload-engine", "filename"),
+    Input("iv-scan", "n_intervals"),
 
     State("store-engine", "data"),
-
-    Input("iv-scan", "n_intervals"),
 
     prevent_initial_call=True
 
 )
 
-def engine_picker(selected_name, upload_contents, upload_filenames, eng_state, _tick):
+def engine_picker(selected_name, _tick, eng_state):
 
     if eng_state is None:
 
@@ -727,33 +809,6 @@ def engine_picker(selected_name, upload_contents, upload_filenames, eng_state, _
         print("Scan failed:", ex)
 
 
-    # uploads
-
-    if upload_contents and upload_filenames:
-
-        if not isinstance(upload_contents, list):
-
-            upload_contents = [upload_contents]; upload_filenames = [upload_filenames]
-
-        for content, fname in zip(upload_contents, upload_filenames):
-
-            try:
-
-                e = EIO.parse_upload(content, fname)
-
-                eng_state["items"].append(e)
-
-                eng_state["names"].append(e["name"])
-
-                EIO.save_engine_json(ENG_DIR, e)
-
-            except Exception as ex:
-
-                print("Engine parse failed:", ex)
-
-        eng_state["active"] = len(eng_state["items"]) - 1
-
-
     # selection
 
     names = eng_state.get("names", [])
@@ -768,30 +823,6 @@ def engine_picker(selected_name, upload_contents, upload_filenames, eng_state, _
     value = eng_state["names"][eng_state["active"]] if eng_state.get("names") else None
 
     return eng_state, opts, value
-
-
-
-@callback(
-
-    Output("download-json", "data"),
-
-    Input("btn-download-json", "n_clicks"),
-
-    State("store-engine", "data"),
-
-    prevent_initial_call=True
-
-)
-
-def download_engine_json(n, eng_state):
-
-    if not eng_state or not eng_state.get("items"):
-
-        raise PreventUpdate
-
-    e = eng_state["items"][eng_state.get("active", 0)]
-
-    return dict(content=json.dumps(e, indent=2), filename="engine.engine.json")
 
 
 
@@ -821,6 +852,10 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
+    Output("ax-distance-time", "figure"),
+
+    Output("ax-speed-time-gear", "figure"),
+
     Output("ax-speedrpm", "figure"),
 
     Output("ax-torquespeed", "figure"),
@@ -845,39 +880,58 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update, no_update
 
     if not v or not M:
 
         raise PreventUpdate
 
 
+
     bsfc_fn, T_WOT, T_CT = C.interpolators(M)
 
     nG = len(v["gears"])
 
+    if nG == 0:
+
+        raise PreventUpdate
+
+
+
     gear_colors = [f"hsl({int(360*i/nG)},60%,60%)" for i in range(nG)]
+
+    styles = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
 
     Krpm2kmh = (2*np.pi*v["re"]/60.0) * 3.6 / v["fd"]
 
 
+
     rpm_grid = np.linspace(0, v["redline_rpm"], 400)
 
-    fig1 = go.Figure()
+    fig_speedrpm = go.Figure()
 
     for gi in range(nG):
 
         v_kmh = (rpm_grid * Krpm2kmh) / v["gears"][gi]
 
-        fig1.add_trace(go.Scatter(x=v_kmh, y=rpm_grid, mode="lines",
+        fig_speedrpm.add_trace(go.Scatter(
 
-                                  name=f"G{gi+1} ({v['gears'][gi]:.2f})",
+            x=v_kmh,
 
-                                  line=dict(width=2, color=gear_colors[gi])))
+            y=rpm_grid,
 
-    fig1.add_hline(y=v["redline_rpm"], line=dict(color="#ff5d5d", dash="dash"), annotation_text="Redline")
+            mode="lines",
 
-    apply_dark(fig1, title="Gear capability: vehicle speed vs engine RPM")
+            name=f"G{gi+1} ({v['gears'][gi]:.2f})",
+
+            line=dict(width=2, color=gear_colors[gi])
+
+        ))
+
+    fig_speedrpm.add_hline(y=v["redline_rpm"], line=dict(color="#ff5d5d", dash="dash"), annotation_text="Redline")
+
+    apply_dark(fig_speedrpm, title="Gear capability: vehicle speed vs engine RPM")
+
 
 
     rpm_grid2 = np.linspace(max(1, v["idle_rpm"]), v["redline_rpm"], 420)
@@ -887,6 +941,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     Twot = np.maximum(0, T_WOT(w_grid))
 
     Tmot = T_CT(w_grid)
+
 
 
     try:
@@ -899,70 +954,205 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     loads = [min(1.0, max(0.0, v_)) for v_ in loads]
 
-    styles = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
 
 
-    fig2 = go.Figure()
+    fig_torque = go.Figure()
+
+    fig_accel = go.Figure()
+
+    fig_force = go.Figure()
+
+    fig_speedtime = go.Figure()
+
+    fig_dist = go.Figure()
+
+
+
+    def cumtrap(x, y):
+
+        x = np.asarray(x, dtype=float)
+
+        y = np.asarray(y, dtype=float)
+
+        if x.size < 2:
+
+            return np.zeros_like(x)
+
+        dx = np.diff(x)
+
+        avg = 0.5 * (y[1:] + y[:-1])
+
+        return np.concatenate(([0.0], np.cumsum(avg * dx)))
+
+
 
     for li, lam in enumerate(loads):
 
         Tvec = np.maximum(0, Tmot + lam*(Twot - Tmot))
 
-        for gi in range(nG):
-
-            v_kmh = (rpm_grid2 * Krpm2kmh) / v["gears"][gi]
-
-            fig2.add_trace(go.Scatter(
-
-                x=v_kmh, y=Tvec, mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=styles[li % len(styles)]),
-
-                showlegend=(gi == 0), name=f"λ={lam:.2f}"))
-
-    apply_dark(fig2, title="Engine torque vs vehicle speed (per gear) at normalized loads")
-
-
-    fig3 = go.Figure()
-
-    for li, lam in enumerate(loads):
-
-        Tvec = np.maximum(0, Tmot + lam*(Twot - Tmot))
+        style = styles[li % len(styles)]
 
         for gi in range(nG):
 
-            v_mps = ((rpm_grid2 * 2*np.pi/60) * v["re"]) / (v["gears"][gi] * v["fd"])
+            gear = v["gears"][gi]
+
+            v_mps = ((rpm_grid2 * 2*np.pi/60) * v["re"]) / (gear * v["fd"])
 
             v_kmh = v_mps * 3.6
 
-            F_wheel = Tvec * (v["gears"][gi]*v["fd"]*v["eta_dl"]) / v["re"]
+
+
+            fig_torque.add_trace(go.Scatter(
+
+                x=v_kmh,
+
+                y=Tvec,
+
+                mode="lines",
+
+                line=dict(width=1.6, color=gear_colors[gi], dash=style),
+
+                showlegend=(gi == 0),
+
+                name=f"λ={lam:.2f}"
+
+            ))
+
+
+
+            F_wheel = Tvec * (gear * v["fd"] * v["eta_dl"]) / v["re"]
 
             R = C.F_roll(v, v_mps) + C.F_aero(v, v_mps)
 
-            a = (F_wheel - R) / v["m"] / v["g"]
+            a_mps2 = (F_wheel - R) / v["m"]
 
-            a[a < 0] = np.nan
+            a_g = a_mps2 / v["g"]
 
-            fig3.add_trace(go.Scatter(
+            a_plot = a_g.copy()
 
-                x=v_kmh, y=a, mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=styles[li % len(styles)]),
-
-                showlegend=(gi == 0), name=f"λ={lam:.2f}"))
-
-    apply_dark(fig3, title="Acceleration vs vehicle speed (per gear) at selected loads")
+            a_plot[a_plot < 0] = np.nan
 
 
-    fig4 = go.Figure()
+
+            fig_accel.add_trace(go.Scatter(
+
+                x=v_kmh,
+
+                y=a_plot,
+
+                mode="lines",
+
+                line=dict(width=1.6, color=gear_colors[gi], dash=style),
+
+                showlegend=(gi == 0),
+
+                name=f"λ={lam:.2f}"
+
+            ))
+
+
+
+            valid = np.isfinite(a_mps2) & (a_mps2 > 1e-3)
+
+            if np.count_nonzero(valid) < 2:
+
+                continue
+
+
+
+            v_mps_valid = v_mps[valid]
+
+            v_kmh_valid = v_kmh[valid]
+
+            a_valid = a_mps2[valid]
+
+            t = cumtrap(v_mps_valid, 1.0 / a_valid)
+
+            dist = cumtrap(t, v_mps_valid)
+
+
+
+            fig_speedtime.add_trace(go.Scatter(
+
+                x=t,
+
+                y=v_kmh_valid,
+
+                mode="lines",
+
+                line=dict(width=1.6, color=gear_colors[gi], dash=style),
+
+                showlegend=False,
+
+                legendgroup=f"λ{li}",
+
+                name=f"λ={lam:.2f}"
+
+            ))
+
+
+
+            fig_dist.add_trace(go.Scatter(
+
+                x=t,
+
+                y=dist,
+
+                mode="lines",
+
+                line=dict(width=1.6, color=gear_colors[gi], dash=style),
+
+                showlegend=(gi == 0),
+
+                legendgroup=f"λ{li}",
+
+                name=f"λ={lam:.2f}"
+
+            ))
+
+
+
+    apply_dark(fig_torque, title="Engine torque vs vehicle speed (per gear) at normalized loads")
+
+    apply_dark(fig_accel, title="Acceleration vs vehicle speed (per gear) at selected loads")
+
+    apply_dark(fig_force, title="Available tractive force (λ=1) and resistance vs speed")
+
+    apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
+
+    apply_dark(fig_dist, title="Vehicle distance vs time (per gear at selected loads)")
+
+
+
+    fig_speedtime.update_xaxes(title="Time (s)")
+
+    fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
+
+    fig_dist.update_xaxes(title="Time (s)")
+
+    fig_dist.update_yaxes(title="Distance (m)")
+
+
 
     v_all_kmh = np.linspace(0, v["top_speed_kmh"], 600)
 
-    v_all_mps = v_all_kmh/3.6
+    v_all_mps = v_all_kmh / 3.6
 
     R_all = C.F_roll(v, v_all_mps) + C.F_aero(v, v_all_mps)
 
-    fig4.add_trace(go.Scatter(x=v_all_kmh, y=R_all, name="Resistance", line=dict(color="#d0d3d8", width=2)))
+    fig_force.add_trace(go.Scatter(
+
+        x=v_all_kmh,
+
+        y=R_all,
+
+        name="Resistance",
+
+        line=dict(color="#d0d3d8", width=2)
+
+    ))
+
+
 
     Tvec_WOT = np.maximum(0, Twot)
 
@@ -972,15 +1162,23 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
         v_kmh = v_mps * 3.6
 
-        F_wheel = Tvec_WOT * (v["gears"][gi]*v["fd"]*v["eta_dl"]) / v["re"]
+        F_wheel = Tvec_WOT * (v["gears"][gi] * v["fd"] * v["eta_dl"]) / v["re"]
 
-        fig4.add_trace(go.Scatter(x=v_kmh, y=F_wheel, name=f"G{gi+1}",
+        fig_force.add_trace(go.Scatter(
 
-                                  line=dict(width=1.6, color=gear_colors[gi])))
+            x=v_kmh,
 
-    apply_dark(fig4, title="Available tractive force (λ=1) and resistance vs speed")
+            y=F_wheel,
 
-    return fig1, fig2, fig3, fig4
+            name=f"G{gi+1}",
+
+            line=dict(width=1.6, color=gear_colors[gi])
+
+        ))
+
+
+
+    return fig_dist, fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
 
 
 
@@ -1044,7 +1242,7 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
                         contours=dict(coloring="heatmap", showlines=False),
 
-                        colorbar=dict(title="Efficiency (%)"))
+                        colorbar=dict(title="Efficiency (%)", len=0.6, y=0.75))
 
         fig.add_contour(x=rpm_map, y=torque, z=Z,
 
@@ -1064,7 +1262,7 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
                         contours=dict(coloring="heatmap", showlines=False),
 
-                        colorbar=dict(title="BSFC (g/kWh)"))
+                        colorbar=dict(title="BSFC (g/kWh)", len=0.6, y=0.75))
 
         zmin = np.nanmin(Z); zmax = np.nanmax(Z)
 
@@ -1096,6 +1294,8 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
                              mode="lines", line=dict(color="#c8ccd1", width=1.5, dash="dash"),
 
                              name="Closed throttle"))
+
+    fig.update_layout(legend=dict(y=0.02, yanchor="bottom", x=1.02, xanchor="left"))
 
     fig.update_xaxes(title="Engine speed (RPM)")
 
