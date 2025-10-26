@@ -355,7 +355,7 @@ def tab3_layout(v, _eng):
 
             dbc.Col([
 
-                dcc.Graph(id="ax-speed-time", style={"height": "270px"}),
+                dcc.Graph(id="ax-speed-time3", style={"height": "270px"}),
 
                 dcc.Graph(id="ax-fuel-time",  style={"height": "270px"}),
 
@@ -501,15 +501,10 @@ maps0 = maps_from_state(v0, eng0)
 
 
 app.layout = html.Div([
-
     dcc.Store(id="store-vehicle", data=v0),
-
     dcc.Store(id="store-engine",  data=eng0),
-
     dcc.Store(id="store-maps",    data=maps0),
-
     dcc.Store(id="store-sequences", data=[]),
-
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
 
@@ -1186,7 +1181,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     Output("ax-map", "figure"),
 
-    Output("ax-speed-time", "figure"),
+    Output("ax-speed-time3", "figure"),
 
     Output("ax-fuel-time", "figure"),
 
