@@ -6,7 +6,7 @@ from typing import Dict, Any, List
 
 import numpy as np
 
-from dash import Dash, dcc, html, Input, Output, State, no_update, callback
+from dash import Dash, dcc, html, Input, Output, State, no_update, callback, ctx
 
 from dash.exceptions import PreventUpdate
 
@@ -526,13 +526,13 @@ app.layout = html.Div([
     ], parent_className="tabs"),
 
 
-    html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
+    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
 
-    html.Div(id="page-tab2", children=tab2_layout(v0)),
+    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
 
-    html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
+    html.Div(id="page-tab3", children=tab3_layout(v0, eng0),  style={"display": "none"}),
 
-    html.Div(id="page-tab4", children=tab4_layout(v0)),
+    html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
 
 ])
 
@@ -567,10 +567,12 @@ def toggle_pages(active):
 # ---------- Utils ----------
 
 def dash_ctx_trigger():
-
-    from dash import callback_context as ctx
-
-    return (ctx.triggered[0]["prop_id"].split(".")[0] if ctx.triggered else "")
+    triggered = ctx.triggered_id
+    if triggered is None:
+        return ""
+    if isinstance(triggered, dict):
+        return triggered.get("id", "")
+    return str(triggered)
 
 
 def _arr(a): return np.asarray(a, dtype=float)
