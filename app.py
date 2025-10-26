@@ -325,7 +325,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time-gear"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
 
@@ -507,70 +507,73 @@ app.layout = html.Div([
     dcc.Store(id="store-sequences", data=[]),
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
-    # Only the tab headers/toggles live inside dcc.Tabs.
+
     dcc.Tabs(
+
         id="tabs",
+
         value="tab1",
+
         parent_className="tabs",
+
         children=[
-            dcc.Tab(label="1) Vehicle & Simulation", value="tab1"),
-            dcc.Tab(label="2) Gearing & Accel",      value="tab2"),
-            dcc.Tab(label="3) Maps & Sequences",     value="tab3"),
-            dcc.Tab(label="4) Steady-State FE",      value="tab4"),
+
+            dcc.Tab(
+
+                label="1) Vehicle & Simulation",
+
+    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
+
+    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
+
+    html.Div(id="page-tab3", children=tab3_layout(v0, eng0),  style={"display": "none"}),
+
+    html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
+
+                label="2) Gearing & Accel",
+
+                value="tab2",
+
+                children=html.Div(id="page-tab2", children=tab2_layout(v0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="3) Maps & Sequences",
+
+                value="tab3",
+
+                children=html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
+
+            ),
+
+            dcc.Tab(
+
+                label="4) Steady-State FE",
+
+                value="tab4",
+
+                children=html.Div(id="page-tab4", children=tab4_layout(v0)),
+
+            ),
+
         ],
+
     ),
 
-    # The actual tab page contents are siblings of Tabs, always mounted.
-    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
-    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
-    html.Div(id="page-tab3", children=tab3_layout(v0, eng0), style={"display": "none"}),
-    html.Div(id="page-tab4", children=tab4_layout(v0),       style={"display": "none"}),
 ])
-
-
-# ---------- Show/Hide pages ----------
-
-@callback(
-
-    Output("page-tab1", "style"),
-
-    Output("page-tab2", "style"),
-
-    Output("page-tab3", "style"),
-
-    Output("page-tab4", "style"),
-
-    Input("tabs", "value"),
-
-)
-def _toggle_pages(active):
-
-    styles = [{"display": "none"} for _ in range(4)]
-
-    idx = {"tab1": 0, "tab2": 1, "tab3": 2, "tab4": 3}.get(active, 0)
-
-    styles[idx] = {"display": "block"}
-
-    return tuple(styles)
 
 
 # ---------- Utils ----------
 
 def dash_ctx_trigger():
-    try:
-        triggered = ctx.triggered_id
-    except Exception:
-        triggered = None
-    if triggered:
-        if isinstance(triggered, dict):
-            return triggered.get("id", "")
-        return str(triggered)
-    trig = getattr(ctx, "triggered", None) or []
-    if trig:
-        prop = trig[0].get("prop_id", "")
-        if prop:
-            return prop.split(".")[0]
-    return ""
+    triggered = ctx.triggered_id
+    if triggered is None:
+        return ""
+    if isinstance(triggered, dict):
+        return triggered.get("id", "")
+    return str(triggered)
 
 
 def _arr(a): return np.asarray(a, dtype=float)
@@ -844,7 +847,7 @@ def rebuild_maps_store(v, eng):
 
     Output("ax-distance-time", "figure"),
 
-    Output("ax-speed-time-gear", "figure"),
+    Output("ax-speed-time", "figure"),
 
     Output("ax-speedrpm", "figure"),
 
