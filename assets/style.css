@@ -141,6 +141,8 @@ button, .btn{ border-radius: 10px !important; }
 
 .tabs{ margin:10px; border-bottom: 1px solid var(--border); }
 
+.page{ margin: 10px; }
+
 
 /* dcc.Tabs core classes */
 
