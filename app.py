@@ -325,7 +325,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time-gear"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
 
@@ -840,7 +840,7 @@ def rebuild_maps_store(v, eng):
 
     Output("ax-distance-time", "figure"),
 
-    Output("ax-speed-time-gear", "figure"),
+    Output("ax-speed-time", "figure"),
 
     Output("ax-speedrpm", "figure"),
 
