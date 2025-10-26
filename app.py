@@ -622,7 +622,13 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
                    tire_w, tire_ar, tire_rim_in, fd, gear_ratios, idle_rpm, redline_rpm):
 
     ctx_id = dash_ctx_trigger()
-
+    if not ctx_id:
+        n_apply = n_apply or 0
+        n_reset = n_reset or 0
+        if n_reset > n_apply:
+            ctx_id = "btn-reset"
+        elif n_apply > n_reset:
+            ctx_id = "btn-apply"
     if ctx_id == "btn-reset":
 
         v = default_vehicle()
