@@ -25,100 +25,20 @@ except Exception:
     HAS_MAT = False
 
 
+DEFAULT_ENGINE_FILENAME = "2014_Mazda_2_0L_SKYACTIV_Engine_Tier_2_Fuel.engine.json"
 
-# -------- Built-in engine (EPA Mazda 2.0L; compact copy) --------
+
+# -------- Built-in engine (EPA Mazda 2.0L) --------
 
 def load_builtin_engine() -> Dict:
 
-    # Same content/shape as your MATLAB app uses.
+    default_path = Path(__file__).resolve().parent / "engines" / DEFAULT_ENGINE_FILENAME
 
-    from math import pi
+    if not default_path.exists():
 
-    # Minimal but representative map (trimmed size for brevity but smooth)
+        raise FileNotFoundError(f"Missing built-in engine at {default_path}")
 
-    # Full grid would be larger; this works well for demo & matches app logic.
-
-    S = _mazda_skyactiv_sample()
-
-    E = dict(
-
-        name="Built-in: Mazda 2.0L (EPA-derived)",
-
-        fuel_map_speed_radps=np.array(S["speed_radps"], dtype=float),
-
-        fuel_map_torque_Nm=np.array(S["torque_Nm"], dtype=float),
-
-        fuel_map_gps=np.array(S["fuel_gps"], dtype=float),
-
-        full_throttle_speed_radps=np.array(S["wot_speed_radps"], dtype=float),
-
-        full_throttle_torque_Nm=np.array(S["wot_torque_Nm"], dtype=float),
-
-        closed_throttle_speed_radps=np.array(S["ct_speed_radps"], dtype=float),
-
-        closed_throttle_torque_Nm=np.array(S["ct_torque_Nm"], dtype=float),
-
-    )
-
-    # Ensure matrix shape [len(torque), len(speed)]
-
-    E["fuel_map_gps"] = E["fuel_map_gps"].reshape(
-
-        len(E["fuel_map_torque_Nm"]), len(E["fuel_map_speed_radps"])
-
-    )
-
-    return E
-
-
-
-def _mazda_skyactiv_sample():
-
-    # A compact subset of the data from your provided MATLAB function
-
-    # (downsampled to keep this file readable).
-
-    speed = [0.0, 104.57, 156.89, 209.28, 310.89, 415.80, 562.87, 680.68]
-
-    torque = [-39.93, 9.69, 49.57, 89.72, 129.53, 169.72, 211.47]
-
-    # 7 x 8 = 56 values; simple smooth surface
-
-    fuel_gps = np.array([
-
-        [0,0,0,0,0,0,0,0],
-
-        [0,0,0.02,0.06,0.17,0.45,0.66,0.70],
-
-        [0.03,0.10,0.20,0.33,0.47,0.72,0.96,1.10],
-
-        [0.05,0.13,0.25,0.41,0.58,0.86,1.19,1.35],
-
-        [0.07,0.18,0.32,0.51,0.75,1.06,1.46,1.65],
-
-        [0.09,0.22,0.40,0.66,0.97,1.39,1.89,2.15],
-
-        [0.12,0.28,0.52,0.83,1.22,1.75,2.32,2.65],
-
-    ])
-
-    wot_w = [0, 157.18, 209.47, 282.74, 356.10, 429.37, 628.31, 680.68]
-
-    wot_T = [0, 164.92, 187.87, 201.40, 197.40, 200.10, 184.0, 0]
-
-    ct_w  = [0, 146.56, 403.17, 465.84, 680.68]
-
-    ct_T  = [-16.01, -20.65, -28.76, -34.96, -42.71]
-
-    return dict(
-
-        speed_radps=speed, torque_Nm=torque, fuel_gps=fuel_gps,
-
-        wot_speed_radps=wot_w, wot_torque_Nm=wot_T,
-
-        ct_speed_radps=ct_w,  ct_torque_Nm=ct_T
-
-    )
+    return load_engine_json(default_path)
 
 
 
@@ -134,25 +54,63 @@ def scan_engines_folder(folder: Union[str, Path]) -> List[Dict]:
 
     engines: List[Dict] = []
 
-    for p in sorted(list(folder.glob("*.json")) + list(folder.glob("*.m")) + list(folder.glob("*.mat"))):
+    seen: set[str] = set()
+
+    def add_engine(E: Dict):
+
+        name = str(E.get("name", "")).strip()
+
+        if not name:
+
+            return
+
+        if name in seen:
+
+            return
+
+        engines.append(E)
+
+        seen.add(name)
+
+    for p in sorted(folder.glob("*.json")):
 
         try:
 
-            if p.suffix.lower() == ".json":
-
-                engines.append(load_engine_json(p))
-
-            elif p.suffix.lower() == ".m":
-
-                engines.append(parse_engine_m_file(p.read_text(encoding="utf-8", errors="ignore"), p.name))
-
-            elif p.suffix.lower() == ".mat" and HAS_MAT:
-
-                engines.append(load_engine_mat(p))
+            add_engine(load_engine_json(p))
 
         except Exception as ex:
 
             print(f"[engine_io] Skipping {p.name}: {ex}")
+
+    for p in sorted(folder.glob("*.m")):
+
+        try:
+
+            e = parse_engine_m_file(p.read_text(encoding="utf-8", errors="ignore"), p.name)
+
+            save_engine_json(folder, e)
+
+            add_engine(e)
+
+        except Exception as ex:
+
+            print(f"[engine_io] Skipping {p.name}: {ex}")
+
+    if HAS_MAT:
+
+        for p in sorted(folder.glob("*.mat")):
+
+            try:
+
+                e = load_engine_mat(p)
+
+                save_engine_json(folder, e)
+
+                add_engine(e)
+
+            except Exception as ex:
+
+                print(f"[engine_io] Skipping {p.name}: {ex}")
 
     return engines
 
@@ -263,7 +221,7 @@ def parse_engine_m_file(text: str, filename="engine.m") -> Dict:
 
         # turn into numbers
 
-        raw = re.sub(r"[,\s]+", " ", mm.group(1).strip())
+        raw = re.sub(r"[;,\s]+", " ", mm.group(1).strip())
 
         if not raw:
 
