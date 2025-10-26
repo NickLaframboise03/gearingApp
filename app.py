@@ -325,7 +325,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time-gear"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
 
@@ -527,13 +527,13 @@ app.layout = html.Div([
 
                 label="1) Vehicle & Simulation",
 
-                value="tab1",
+    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
 
-                children=html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
+    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
 
-            ),
+    html.Div(id="page-tab3", children=tab3_layout(v0, eng0),  style={"display": "none"}),
 
-            dcc.Tab(
+    html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
 
                 label="2) Gearing & Accel",
 
@@ -573,20 +573,12 @@ app.layout = html.Div([
 # ---------- Utils ----------
 
 def dash_ctx_trigger():
-    try:
-        triggered = ctx.triggered_id
-    except Exception:
-        triggered = None
-    if triggered:
-        if isinstance(triggered, dict):
-            return triggered.get("id", "")
-        return str(triggered)
-    trig = getattr(ctx, "triggered", None) or []
-    if trig:
-        prop = trig[0].get("prop_id", "")
-        if prop:
-            return prop.split(".")[0]
-    return ""
+    triggered = ctx.triggered_id
+    if triggered is None:
+        return ""
+    if isinstance(triggered, dict):
+        return triggered.get("id", "")
+    return str(triggered)
 
 
 def _arr(a): return np.asarray(a, dtype=float)
@@ -854,7 +846,7 @@ def rebuild_maps_store(v, eng):
 
     Output("ax-distance-time", "figure"),
 
-    Output("ax-speed-time-gear", "figure"),
+    Output("ax-speed-time", "figure"),
 
     Output("ax-speedrpm", "figure"),
 
