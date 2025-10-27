@@ -349,7 +349,7 @@ def tab3_layout(v, _eng):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-map", style={"height": "560px"}), md=7),
+            dbc.Col(dcc.Graph(id="ax-map", style={"height": "810px"}), md=7),
 
             dbc.Col([
 
@@ -428,6 +428,14 @@ def tab3_layout(v, _eng):
                 html.Label("Shift speeds [km/h]:"),
 
                 dbc.Input(id="shift-speeds", type="text", value="40 65 100 130 160", style={"width": "320px"}),
+
+            ], className="bar-cell"),
+
+            html.Div([
+
+                html.Label("Distance markers [m]:"),
+
+                dbc.Input(id="distance-markers", type="text", value="100 200 400", style={"width": "200px"}),
 
             ], className="bar-cell"),
 
@@ -1145,11 +1153,13 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     Input("cruise-label-step", "value"),
 
+    Input("distance-markers", "value"),
+
     State("store-vehicle", "data"),
 
 )
 
-def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear, label_step, v):
+def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear, label_step, markers_txt, v):
 
     if active_tab != "tab3":
 
@@ -1158,6 +1168,21 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
     if not M:
 
         raise PreventUpdate
+
+
+    markers = []
+
+    if markers_txt:
+
+        try:
+
+            raw = [float(x) for x in str(markers_txt).replace(",", " " ).split()]
+
+            markers = sorted({m for m in raw if np.isfinite(m) and m >= 0.0})
+
+        except Exception:
+
+            markers = []
 
 
     torque = _arr(M["torque_Nm"])
@@ -1240,7 +1265,7 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
     fig.update_yaxes(title="Torque (N·m)")
 
-    apply_dark(fig, height=560, title=title)
+    apply_dark(fig, height=810, title=title)
 
 
     # Cruise overlay with labels
