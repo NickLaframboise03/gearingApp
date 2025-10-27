@@ -317,7 +317,9 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=12),
+            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
+
+            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
 
         ]),
 
@@ -823,6 +825,8 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
+    Output("ax-speed-time", "figure"),
+
     Output("ax-speedrpm", "figure"),
 
     Output("ax-torquespeed", "figure"),
@@ -847,7 +851,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update
 
     if not v or not M:
 
@@ -929,6 +933,26 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     fig_force = go.Figure()
 
+    fig_speedtime = go.Figure()
+
+
+
+    def cumtrap(x, y):
+
+        x = np.asarray(x, dtype=float)
+
+        y = np.asarray(y, dtype=float)
+
+        if x.size < 2:
+
+            return np.zeros_like(x)
+
+        dx = np.diff(x)
+
+        avg = 0.5 * (y[1:] + y[:-1])
+
+        return np.concatenate(([0.0], np.cumsum(avg * dx)))
+
 
 
     for li, lam in enumerate(loads):
@@ -997,6 +1021,46 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
 
 
+            valid = np.isfinite(a_mps2) & (a_mps2 > 1e-3)
+
+            if np.count_nonzero(valid) < 2:
+
+                continue
+
+
+
+            v_mps_valid = v_mps[valid]
+
+            v_kmh_valid = v_kmh[valid]
+
+            a_valid = a_mps2[valid]
+
+            t = cumtrap(v_mps_valid, 1.0 / a_valid)
+
+
+
+
+            fig_speedtime.add_trace(go.Scatter(
+
+                x=t,
+
+                y=v_kmh_valid,
+
+                mode="lines",
+
+                line=dict(width=1.6, color=gear_colors[gi], dash=style),
+
+                showlegend=False,
+
+                legendgroup=f"λ{li}",
+
+                name=f"λ={lam:.2f}"
+
+            ))
+
+
+
+
 
 
     apply_dark(fig_torque, title="Engine torque vs vehicle speed (per gear) at normalized loads")
@@ -1004,6 +1068,17 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     apply_dark(fig_accel, title="Acceleration vs vehicle speed (per gear) at selected loads")
 
     apply_dark(fig_force, title="Available tractive force (λ=1) and resistance vs speed")
+
+    apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
+
+
+
+
+    fig_speedtime.update_xaxes(title="Time (s)")
+
+    fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
+
+
 
 
 
@@ -1050,7 +1125,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         ))
 
 
-    return fig_speedrpm, fig_torque, fig_accel, fig_force
+    return fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
 
 # ---------- Tab 3: engine map + sequences ----------
 
@@ -1305,40 +1380,6 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
                 dist = np.zeros_like(ts)
 
             fig_d.add_trace(go.Scatter(x=ts, y=dist, mode="lines", line=dict(color=col, width=2), name=nm, legendgroup=nm))
-
-            if markers and dist.size:
-
-                dist_monotonic = np.maximum.accumulate(dist)
-
-                reachable = [m for m in markers if dist_monotonic[-1] >= m]
-
-                if reachable:
-
-                    reachable = list(reachable)
-
-                    times = np.interp(reachable, dist_monotonic, ts)
-
-                    texts = [f"{nm}: {m:g} m" for m in reachable]
-
-                    fig_d.add_trace(go.Scatter(
-
-                        x=times,
-
-                        y=reachable,
-
-                        mode="markers",
-
-                        marker=dict(symbol="x", size=9, color=col, line=dict(color="white", width=1)),
-
-                        text=texts,
-
-                        hovertemplate="%{text}<br>t = %{x:.2f} s<extra></extra>",
-
-                        showlegend=False,
-
-                        legendgroup=nm,
-
-                    ))
 
         gear = np.asarray(Tt.get("gear", []))
 
