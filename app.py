@@ -317,7 +317,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-distance-time"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
 
@@ -325,17 +325,15 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
-
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
+
+            dbc.Col(dcc.Graph(id="ax-accelspeed"), md=6),
 
         ]),
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-accelspeed"), md=6),
-
-            dbc.Col(dcc.Graph(id="ax-accelbottom"), md=6),
+            dbc.Col(dcc.Graph(id="ax-accelbottom"), md=12),
 
         ]),
 
@@ -358,6 +356,8 @@ def tab3_layout(v, _eng):
                 dcc.Graph(id="ax-speed-time3", style={"height": "270px"}),
 
                 dcc.Graph(id="ax-fuel-time",  style={"height": "270px"}),
+
+                dcc.Graph(id="ax-distance-time3", style={"height": "270px"}),
 
             ], md=5)
 
@@ -507,61 +507,33 @@ app.layout = html.Div([
     dcc.Store(id="store-sequences", data=[]),
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
-
     dcc.Tabs(
-
         id="tabs",
-
         value="tab1",
-
         parent_className="tabs",
-
         children=[
-
             dcc.Tab(
-
                 label="1) Vehicle & Simulation",
-
-    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
-
-    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
-
-    html.Div(id="page-tab3", children=tab3_layout(v0, eng0),  style={"display": "none"}),
-
-    html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
-
+                value="tab1",
+                children=html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
+            ),
+            dcc.Tab(
                 label="2) Gearing & Accel",
-
                 value="tab2",
-
                 children=html.Div(id="page-tab2", children=tab2_layout(v0)),
-
             ),
-
             dcc.Tab(
-
                 label="3) Maps & Sequences",
-
                 value="tab3",
-
                 children=html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
-
             ),
-
             dcc.Tab(
-
                 label="4) Steady-State FE",
-
                 value="tab4",
-
                 children=html.Div(id="page-tab4", children=tab4_layout(v0)),
-
             ),
-
         ],
-
     ),
-
 ])
 
 
@@ -845,8 +817,6 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
-    Output("ax-distance-time", "figure"),
-
     Output("ax-speed-time", "figure"),
 
     Output("ax-speedrpm", "figure"),
@@ -873,7 +843,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update
 
     if not v or not M:
 
@@ -956,8 +926,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     fig_force = go.Figure()
 
     fig_speedtime = go.Figure()
-
-    fig_dist = go.Figure()
 
 
 
@@ -1061,7 +1029,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
             t = cumtrap(v_mps_valid, 1.0 / a_valid)
 
-            dist = cumtrap(t, v_mps_valid)
 
 
 
@@ -1085,23 +1052,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
 
 
-            fig_dist.add_trace(go.Scatter(
-
-                x=t,
-
-                y=dist,
-
-                mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=style),
-
-                showlegend=(gi == 0),
-
-                legendgroup=f"λ{li}",
-
-                name=f"λ={lam:.2f}"
-
-            ))
 
 
 
@@ -1113,7 +1063,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
 
-    apply_dark(fig_dist, title="Vehicle distance vs time (per gear at selected loads)")
 
 
 
@@ -1121,9 +1070,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
 
-    fig_dist.update_xaxes(title="Time (s)")
 
-    fig_dist.update_yaxes(title="Distance (m)")
 
 
 
@@ -1170,10 +1117,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         ))
 
 
-
-    return fig_dist, fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
-
-
+    return fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
 
 # ---------- Tab 3: engine map + sequences ----------
 
@@ -1184,6 +1128,8 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     Output("ax-speed-time3", "figure"),
 
     Output("ax-fuel-time", "figure"),
+
+    Output("ax-distance-time3", "figure"),
 
     Input("tabs", "value"),
 
@@ -1207,7 +1153,7 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
     if active_tab != "tab3":
 
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not M:
 
@@ -1346,6 +1292,8 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
     fig_f = apply_dark(go.Figure(), height=270, title="Cumulative fuel vs time")
 
+    fig_d = apply_dark(go.Figure(), height=270, title="Distance vs time")
+
     seen = set()
 
     for i, S in enumerate(seqs or []):
@@ -1392,6 +1340,22 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
         fig_f.add_trace(go.Scatter(x=ts, y=fk, mode="lines", line=dict(color=col, width=2), name=nm, legendgroup=nm))
 
+        dist = np.array([])
+
+        if ts.size and vk.size and ts.size == vk.size:
+
+            vk_mps = vk / 3.6
+
+            if ts.size >= 2:
+
+                dist = np.concatenate(([0.0], np.cumsum(0.5 * (vk_mps[1:] + vk_mps[:-1]) * np.diff(ts))))
+
+            else:
+
+                dist = np.zeros_like(ts)
+
+            fig_d.add_trace(go.Scatter(x=ts, y=dist, mode="lines", line=dict(color=col, width=2), name=nm, legendgroup=nm))
+
         gear = np.asarray(Tt.get("gear", []))
 
         if gear.size:
@@ -1410,8 +1374,28 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
                                        showlegend=False, legendgroup=nm))
 
+            if dist.size and dist.size == ts.size:
 
-    return fig, fig_v, fig_f
+                fig_d.add_trace(go.Scatter(x=ts[change], y=dist[change], mode="markers",
+
+                                           marker=dict(symbol="circle", size=7, color=col, line=dict(color="white", width=1)),
+
+                                           showlegend=False, legendgroup=nm))
+
+
+    fig_v.update_xaxes(title="Time (s)")
+
+    fig_v.update_yaxes(title="Vehicle speed (km/h)")
+
+    fig_f.update_xaxes(title="Time (s)")
+
+    fig_f.update_yaxes(title="Cumulative fuel (L)")
+
+    fig_d.update_xaxes(title="Time (s)")
+
+    fig_d.update_yaxes(title="Distance (m)")
+
+    return fig, fig_v, fig_f, fig_d
 
 
 
