@@ -317,15 +317,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-distance-time"), md=6),
-
             dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
-
-        ]),
-
-        dbc.Row([
-
-            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
 
             dbc.Col(dcc.Graph(id="ax-torquespeed"), md=6),
 
@@ -351,13 +343,15 @@ def tab3_layout(v, _eng):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-map", style={"height": "560px"}), md=7),
+            dbc.Col(dcc.Graph(id="ax-map", style={"height": "810px"}), md=7),
 
             dbc.Col([
 
                 dcc.Graph(id="ax-speed-time3", style={"height": "270px"}),
 
                 dcc.Graph(id="ax-fuel-time",  style={"height": "270px"}),
+
+                dcc.Graph(id="ax-distance-time3", style={"height": "270px"}),
 
             ], md=5)
 
@@ -428,6 +422,14 @@ def tab3_layout(v, _eng):
                 html.Label("Shift speeds [km/h]:"),
 
                 dbc.Input(id="shift-speeds", type="text", value="40 65 100 130 160", style={"width": "320px"}),
+
+            ], className="bar-cell"),
+
+            html.Div([
+
+                html.Label("Distance markers [m]:"),
+
+                dbc.Input(id="distance-markers", type="text", value="100 200 400", style={"width": "200px"}),
 
             ], className="bar-cell"),
 
@@ -507,61 +509,33 @@ app.layout = html.Div([
     dcc.Store(id="store-sequences", data=[]),
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
 
-
     dcc.Tabs(
-
         id="tabs",
-
         value="tab1",
-
         parent_className="tabs",
-
         children=[
-
             dcc.Tab(
-
                 label="1) Vehicle & Simulation",
-
-    html.Div(id="page-tab1", children=tab1_layout(v0, eng0), style={"display": "block"}),
-
-    html.Div(id="page-tab2", children=tab2_layout(v0),       style={"display": "none"}),
-
-    html.Div(id="page-tab3", children=tab3_layout(v0, eng0),  style={"display": "none"}),
-
-    html.Div(id="page-tab4", children=tab4_layout(v0),        style={"display": "none"}),
-
+                value="tab1",
+                children=html.Div(id="page-tab1", children=tab1_layout(v0, eng0)),
+            ),
+            dcc.Tab(
                 label="2) Gearing & Accel",
-
                 value="tab2",
-
                 children=html.Div(id="page-tab2", children=tab2_layout(v0)),
-
             ),
-
             dcc.Tab(
-
                 label="3) Maps & Sequences",
-
                 value="tab3",
-
                 children=html.Div(id="page-tab3", children=tab3_layout(v0, eng0)),
-
             ),
-
             dcc.Tab(
-
                 label="4) Steady-State FE",
-
                 value="tab4",
-
                 children=html.Div(id="page-tab4", children=tab4_layout(v0)),
-
             ),
-
         ],
-
     ),
-
 ])
 
 
@@ -845,10 +819,6 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
-    Output("ax-distance-time", "figure"),
-
-    Output("ax-speed-time", "figure"),
-
     Output("ax-speedrpm", "figure"),
 
     Output("ax-torquespeed", "figure"),
@@ -873,7 +843,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not v or not M:
 
@@ -955,28 +925,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     fig_force = go.Figure()
 
-    fig_speedtime = go.Figure()
-
-    fig_dist = go.Figure()
-
-
-
-    def cumtrap(x, y):
-
-        x = np.asarray(x, dtype=float)
-
-        y = np.asarray(y, dtype=float)
-
-        if x.size < 2:
-
-            return np.zeros_like(x)
-
-        dx = np.diff(x)
-
-        avg = 0.5 * (y[1:] + y[:-1])
-
-        return np.concatenate(([0.0], np.cumsum(avg * dx)))
-
 
 
     for li, lam in enumerate(loads):
@@ -1045,64 +993,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
 
 
-            valid = np.isfinite(a_mps2) & (a_mps2 > 1e-3)
-
-            if np.count_nonzero(valid) < 2:
-
-                continue
-
-
-
-            v_mps_valid = v_mps[valid]
-
-            v_kmh_valid = v_kmh[valid]
-
-            a_valid = a_mps2[valid]
-
-            t = cumtrap(v_mps_valid, 1.0 / a_valid)
-
-            dist = cumtrap(t, v_mps_valid)
-
-
-
-            fig_speedtime.add_trace(go.Scatter(
-
-                x=t,
-
-                y=v_kmh_valid,
-
-                mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=style),
-
-                showlegend=False,
-
-                legendgroup=f"λ{li}",
-
-                name=f"λ={lam:.2f}"
-
-            ))
-
-
-
-            fig_dist.add_trace(go.Scatter(
-
-                x=t,
-
-                y=dist,
-
-                mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=style),
-
-                showlegend=(gi == 0),
-
-                legendgroup=f"λ{li}",
-
-                name=f"λ={lam:.2f}"
-
-            ))
-
 
 
     apply_dark(fig_torque, title="Engine torque vs vehicle speed (per gear) at normalized loads")
@@ -1110,20 +1000,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     apply_dark(fig_accel, title="Acceleration vs vehicle speed (per gear) at selected loads")
 
     apply_dark(fig_force, title="Available tractive force (λ=1) and resistance vs speed")
-
-    apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
-
-    apply_dark(fig_dist, title="Vehicle distance vs time (per gear at selected loads)")
-
-
-
-    fig_speedtime.update_xaxes(title="Time (s)")
-
-    fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
-
-    fig_dist.update_xaxes(title="Time (s)")
-
-    fig_dist.update_yaxes(title="Distance (m)")
 
 
 
@@ -1170,10 +1046,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         ))
 
 
-
-    return fig_dist, fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
-
-
+    return fig_speedrpm, fig_torque, fig_accel, fig_force
 
 # ---------- Tab 3: engine map + sequences ----------
 
@@ -1184,6 +1057,8 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     Output("ax-speed-time3", "figure"),
 
     Output("ax-fuel-time", "figure"),
+
+    Output("ax-distance-time3", "figure"),
 
     Input("tabs", "value"),
 
@@ -1199,19 +1074,36 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     Input("cruise-label-step", "value"),
 
+    Input("distance-markers", "value"),
+
     State("store-vehicle", "data"),
 
 )
 
-def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear, label_step, v):
+def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear, label_step, markers_txt, v):
 
     if active_tab != "tab3":
 
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not M:
 
         raise PreventUpdate
+
+
+    markers = []
+
+    if markers_txt:
+
+        try:
+
+            raw = [float(x) for x in str(markers_txt).replace(",", " " ).split()]
+
+            markers = sorted({m for m in raw if np.isfinite(m) and m >= 0.0})
+
+        except Exception:
+
+            markers = []
 
 
     torque = _arr(M["torque_Nm"])
@@ -1294,7 +1186,7 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
     fig.update_yaxes(title="Torque (N·m)")
 
-    apply_dark(fig, height=560, title=title)
+    apply_dark(fig, height=810, title=title)
 
 
     # Cruise overlay with labels
@@ -1346,6 +1238,8 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
     fig_f = apply_dark(go.Figure(), height=270, title="Cumulative fuel vs time")
 
+    fig_d = apply_dark(go.Figure(), height=270, title="Distance vs time")
+
     seen = set()
 
     for i, S in enumerate(seqs or []):
@@ -1392,6 +1286,56 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
         fig_f.add_trace(go.Scatter(x=ts, y=fk, mode="lines", line=dict(color=col, width=2), name=nm, legendgroup=nm))
 
+        dist = np.array([])
+
+        if ts.size and vk.size and ts.size == vk.size:
+
+            vk_mps = vk / 3.6
+
+            if ts.size >= 2:
+
+                dist = np.concatenate(([0.0], np.cumsum(0.5 * (vk_mps[1:] + vk_mps[:-1]) * np.diff(ts))))
+
+            else:
+
+                dist = np.zeros_like(ts)
+
+            fig_d.add_trace(go.Scatter(x=ts, y=dist, mode="lines", line=dict(color=col, width=2), name=nm, legendgroup=nm))
+
+            if markers and dist.size:
+
+                dist_monotonic = np.maximum.accumulate(dist)
+
+                reachable = [m for m in markers if dist_monotonic[-1] >= m]
+
+                if reachable:
+
+                    reachable = list(reachable)
+
+                    times = np.interp(reachable, dist_monotonic, ts)
+
+                    texts = [f"{nm}: {m:g} m" for m in reachable]
+
+                    fig_d.add_trace(go.Scatter(
+
+                        x=times.tolist(),
+
+                        y=reachable,
+
+                        mode="markers",
+
+                        marker=dict(symbol="x", size=18, color=col, line=dict(color="white", width=2)),
+
+                        text=texts,
+
+                        hovertemplate="%{text}<br>t = %{x:.2f} s<extra></extra>",
+
+                        showlegend=False,
+
+                        legendgroup=nm,
+
+                    ))
+
         gear = np.asarray(Tt.get("gear", []))
 
         if gear.size:
@@ -1410,8 +1354,28 @@ def update_map_and_time(active_tab, M, seqs, map_mode, show_cruise, cruise_gear,
 
                                        showlegend=False, legendgroup=nm))
 
+            if dist.size and dist.size == ts.size:
 
-    return fig, fig_v, fig_f
+                fig_d.add_trace(go.Scatter(x=ts[change], y=dist[change], mode="markers",
+
+                                           marker=dict(symbol="circle", size=7, color=col, line=dict(color="white", width=1)),
+
+                                           showlegend=False, legendgroup=nm))
+
+
+    fig_v.update_xaxes(title="Time (s)")
+
+    fig_v.update_yaxes(title="Vehicle speed (km/h)")
+
+    fig_f.update_xaxes(title="Time (s)")
+
+    fig_f.update_yaxes(title="Cumulative fuel (L)")
+
+    fig_d.update_xaxes(title="Time (s)")
+
+    fig_d.update_yaxes(title="Distance (m)")
+
+    return fig, fig_v, fig_f, fig_d
 
 
 
