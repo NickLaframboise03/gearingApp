@@ -361,9 +361,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
-
-            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=12),
 
         ]),
 
@@ -893,8 +891,6 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
-    Output("ax-speed-time", "figure"),
-
     Output("ax-speedrpm", "figure"),
 
     Output("ax-torquespeed", "figure"),
@@ -919,7 +915,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not v or not M:
 
@@ -1001,26 +997,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     fig_force = go.Figure()
 
-    fig_speedtime = go.Figure()
-
-
-
-    def cumtrap(x, y):
-
-        x = np.asarray(x, dtype=float)
-
-        y = np.asarray(y, dtype=float)
-
-        if x.size < 2:
-
-            return np.zeros_like(x)
-
-        dx = np.diff(x)
-
-        avg = 0.5 * (y[1:] + y[:-1])
-
-        return np.concatenate(([0.0], np.cumsum(avg * dx)))
-
 
 
     for li, lam in enumerate(loads):
@@ -1089,44 +1065,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
 
 
-            valid = np.isfinite(a_mps2) & (a_mps2 > 1e-3)
-
-            if np.count_nonzero(valid) < 2:
-
-                continue
-
-
-
-            v_mps_valid = v_mps[valid]
-
-            v_kmh_valid = v_kmh[valid]
-
-            a_valid = a_mps2[valid]
-
-            t = cumtrap(v_mps_valid, 1.0 / a_valid)
-
-
-
-
-            fig_speedtime.add_trace(go.Scatter(
-
-                x=t,
-
-                y=v_kmh_valid,
-
-                mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=style),
-
-                showlegend=False,
-
-                legendgroup=f"λ{li}",
-
-                name=f"λ={lam:.2f}"
-
-            ))
-
-
 
 
 
@@ -1136,19 +1074,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     apply_dark(fig_accel, title="Acceleration vs vehicle speed (per gear) at selected loads")
 
     apply_dark(fig_force, title="Available tractive force (λ=1) and resistance vs speed")
-
-    apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
-
-
-
-
-    fig_speedtime.update_xaxes(title="Time (s)")
-
-    fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
-
-
-
-
 
     v_all_kmh = np.linspace(0, v["top_speed_kmh"], 600)
 
@@ -1193,7 +1118,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         ))
 
 
-    return fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
+    return fig_speedrpm, fig_torque, fig_accel, fig_force
 
 # ---------- Tab 3: engine map + sequences ----------
 
