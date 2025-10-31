@@ -6,10 +6,12 @@ import re
 
 from pathlib import Path
 
-from typing import Dict, List, Union
+from typing import Dict, List, Union, Any
 
 
 import numpy as np
+
+import tc
 
 
 # Optional .mat support
@@ -328,6 +330,22 @@ def parse_upload(contents_b64: str, filename: str) -> Dict:
 
 # -------- utilities --------
 
+
+
+# Helper to normalize optional torque-converter data
+def _normalize_converter_block(conv: Any) -> Dict[str, Any]:
+    base = tc.DEFAULT_TC_CURVES
+    conv = conv or {}
+    def arr(key: str) -> np.ndarray:
+        src = conv.get(key, base[key])
+        return np.asarray(src, dtype=float).ravel()
+    return dict(
+        speed_ratio=arr("speed_ratio"),
+        torque_ratio=arr("torque_ratio"),
+        k_norm=arr("k_norm"),
+        lockup_sr=float(conv.get("lockup_sr", base.get("lockup_sr", 0.92))),
+    )
+
 def normalize_engine_dict(E: Dict) -> Dict:
 
     req = [
@@ -360,6 +378,8 @@ def normalize_engine_dict(E: Dict) -> Dict:
 
         gps = gps.reshape(tq.size, sp.size)
 
+    converter = _normalize_converter_block(E.get("converter"))
+
     return dict(
 
         name=str(E.get("name", "engine")),
@@ -378,23 +398,31 @@ def normalize_engine_dict(E: Dict) -> Dict:
 
         closed_throttle_torque_Nm=np.asarray(E["closed_throttle_torque_Nm"], dtype=float).ravel(),
 
+        converter=converter,
+
     )
 
 
 
 def _to_jsonable(E: Dict) -> Dict:
 
+    def convert(val):
+
+        if isinstance(val, np.ndarray):
+
+            return val.tolist()
+
+        if isinstance(val, dict):
+
+            return {kk: convert(vv) for kk, vv in val.items()}
+
+        return val
+
     out = {}
 
     for k, v in E.items():
 
-        if isinstance(v, np.ndarray):
-
-            out[k] = v.tolist()
-
-        else:
-
-            out[k] = v
+        out[k] = convert(v)
 
     return out
 
