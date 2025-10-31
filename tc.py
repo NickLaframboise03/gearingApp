@@ -10,9 +10,7 @@ DEFAULT_TC_CURVES: Dict[str, Sequence[float]] = dict(
 
 
 def interp_lin(x: float, xp: Sequence[float], fp: Sequence[float]) -> float:
-    xp = list(xp)
-    fp = list(fp)
-    if len(xp) == 0:
+    if not xp:
         return float(fp[0]) if fp else 0.0
     if x <= xp[0]:
         return float(fp[0])
@@ -59,24 +57,12 @@ def solve_tc_state(omega_turb: float,
                    Te_fn,
                    tc_curves: Dict[str, Sequence[float]],
                    stall_rpm: float) -> Dict[str, float]:
-    omega_turb = max(float(omega_turb), 0.0)
-
-    sr_grid = list(tc_curves.get("speed_ratio", DEFAULT_TC_CURVES["speed_ratio"]))
-    TR_grid = list(tc_curves.get("torque_ratio", DEFAULT_TC_CURVES["torque_ratio"]))
-    Knorm_grid = list(tc_curves.get("k_norm", DEFAULT_TC_CURVES["k_norm"]))
-    if not sr_grid:
-        sr_grid = list(DEFAULT_TC_CURVES["speed_ratio"])
-    if not TR_grid:
-        TR_grid = list(DEFAULT_TC_CURVES["torque_ratio"])
-    if not Knorm_grid:
-        Knorm_grid = list(DEFAULT_TC_CURVES["k_norm"])
+    sr_grid = tc_curves.get("speed_ratio", DEFAULT_TC_CURVES["speed_ratio"])
+    TR_grid = tc_curves.get("torque_ratio", DEFAULT_TC_CURVES["torque_ratio"])
+    Knorm_grid = tc_curves.get("k_norm", DEFAULT_TC_CURVES["k_norm"])
     lockup_sr = float(tc_curves.get("lockup_sr", DEFAULT_TC_CURVES.get("lockup_sr", 0.92)))
 
-    try:
-        stall_rpm = float(stall_rpm)
-    except (TypeError, ValueError):
-        stall_rpm = 2600.0
-    stall_rpm = max(stall_rpm, 1.0)
+    stall_rpm = float(max(stall_rpm, 1.0))
     omega_stall = stall_rpm * 2.0 * math.pi / 60.0
     T_stall = max(float(Te_fn(omega_stall)), 1e-6)
     K0 = stall_rpm / math.sqrt(T_stall)
@@ -100,7 +86,7 @@ def solve_tc_state(omega_turb: float,
         sr = 1.0
     sr = max(min(sr, 1.0), sr_min)
 
-    if sr >= lockup_sr:
+    if sr >= lockup_sr and lockup_sr < 1.0:
         omega_engine = omega_turb
         T_pump = float(Te_fn(omega_engine))
         return dict(sr=1.0, omega_pump=omega_engine, T_pump=T_pump,
