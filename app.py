@@ -127,7 +127,9 @@ def default_vehicle() -> Dict[str, Any]:
 
         "gears": [3.55, 1.95, 1.30, 1.03, 0.84, 0.68],
 
-        "idle_rpm": 900.0, "redline_rpm": 6500.0
+        "idle_rpm": 900.0, "redline_rpm": 6500.0,
+        "auto_trans_enabled": False,
+        "stall_speed_rpm": 2600.0
 
     }
 
@@ -179,9 +181,21 @@ def maps_from_state(vstate: Dict[str, Any], eng_state: Dict[str, Any]) -> Dict[s
 
     out = {}
 
+    def _to_jsonable(val):
+
+        if isinstance(val, np.ndarray):
+
+            return val.tolist()
+
+        if isinstance(val, dict):
+
+            return {kk: _to_jsonable(vv) for kk, vv in val.items()}
+
+        return val
+
     for k, val in M.items():
 
-        out[k] = val.tolist() if isinstance(val, np.ndarray) else val
+        out[k] = _to_jsonable(val)
 
     return out
 
@@ -189,9 +203,18 @@ def maps_from_state(vstate: Dict[str, Any], eng_state: Dict[str, Any]) -> Dict[s
 
 # ---------- Layout helpers ----------
 
-def num(id_, val, step=None, min_=None, max_=None, width="140px"):
+def num(id_, val, step=None, min_=None, max_=None, width="140px", disabled=False):
 
-    return dbc.Input(id=id_, type="number", value=float(val), step=step, min=min_, max=max_, style={"width": width})
+    return dbc.Input(
+        id=id_,
+        type="number",
+        value=float(val),
+        step=step,
+        min=min_,
+        max=max_,
+        disabled=disabled,
+        style={"width": width},
+    )
 
 
 def txt(id_, val, width="340px"):
@@ -229,6 +252,27 @@ def tab1_layout(v, eng):
                 dbc.Row([dbc.Col(html.Label("g [m/s²]")), dbc.Col(num("g", v["g"], step=0.01))]),
 
                 dbc.Row([dbc.Col(html.Label("η_dl")), dbc.Col(num("eta_dl", v["eta_dl"], step=0.01, min_=0, max_=1))]),
+
+                dbc.Row([
+                    dbc.Col(dcc.Checklist(
+                        id="auto-trans-enabled",
+                        options=[{"label": " Automatic (torque converter)", "value": 1}],
+                        value=[1] if v.get("auto_trans_enabled") else [],
+                        style={"display": "inline-block"},
+                    )),
+                ]),
+
+                dbc.Row([
+                    dbc.Col(html.Label("Stall speed (rpm)")),
+                    dbc.Col(num(
+                        "stall-speed-rpm",
+                        v.get("stall_speed_rpm", 2600.0),
+                        step=50,
+                        min_=0,
+                        width="140px",
+                        disabled=not bool(v.get("auto_trans_enabled")),
+                    )),
+                ]),
 
                 html.Hr(),
 
@@ -317,9 +361,7 @@ def tab2_layout(_v):
 
         dbc.Row([
 
-            dbc.Col(dcc.Graph(id="ax-speed-time"), md=6),
-
-            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=6),
+            dbc.Col(dcc.Graph(id="ax-speedrpm"), md=12),
 
         ]),
 
@@ -587,6 +629,7 @@ def _arr(a): return np.asarray(a, dtype=float)
     State("fd", "value"), State("gear_ratios", "value"),
 
     State("idle_rpm", "value"), State("redline_rpm", "value"),
+    State("auto-trans-enabled", "value"), State("stall-speed-rpm", "value"),
 
     prevent_initial_call=True
 
@@ -594,7 +637,8 @@ def _arr(a): return np.asarray(a, dtype=float)
 
 def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g, eta_dl,
 
-                   tire_w, tire_ar, tire_rim_in, fd, gear_ratios, idle_rpm, redline_rpm):
+                   tire_w, tire_ar, tire_rim_in, fd, gear_ratios, idle_rpm, redline_rpm,
+                   auto_trans_enabled, stall_speed_rpm):
 
     ctx_id = dash_ctx_trigger()
     if not ctx_id:
@@ -620,6 +664,12 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
 
             gears = default_vehicle()["gears"]
 
+        auto_enabled = bool(auto_trans_enabled and (1 in auto_trans_enabled))
+        stall_val = float(stall_speed_rpm or 2600.0)
+        if stall_val <= 0:
+            stall_val = 2600.0
+
+
         v = {
 
             "m": float(m), "Cd": float(Cd), "Af": float(Af),
@@ -630,7 +680,9 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
 
             "tire_w": float(tire_w), "tire_ar": float(tire_ar), "tire_rim_in": float(tire_rim_in),
 
-            "fd": float(fd), "gears": gears, "idle_rpm": float(idle_rpm), "redline_rpm": float(redline_rpm)
+            "fd": float(fd), "gears": gears, "idle_rpm": float(idle_rpm), "redline_rpm": float(redline_rpm),
+            "auto_trans_enabled": auto_enabled,
+            "stall_speed_rpm": stall_val,
 
         }
 
@@ -680,6 +732,10 @@ def apply_or_reset(n_apply, n_reset, m, Cd, Af, rho_air, rho_fuel, lhv_mjpkg, g,
     Output("idle_rpm", "value"),
 
     Output("redline_rpm", "value"),
+    Output("auto-trans-enabled", "value"),
+
+    Output("stall-speed-rpm", "value"),
+
 
     Input("store-vehicle", "data"),
 
@@ -725,9 +781,19 @@ def sync_vehicle_inputs(v):
 
         float(v.get("idle_rpm", 0.0)),
 
-        float(v.get("redline_rpm", 0.0))
+        float(v.get("redline_rpm", 0.0)),
+        ([1] if v.get("auto_trans_enabled") else []),
+        float(v.get("stall_speed_rpm", 0.0)),
 
     )
+
+
+@callback(
+    Output("stall-speed-rpm", "disabled"),
+    Input("auto-trans-enabled", "value"),
+)
+def toggle_stall_disabled(auto_val):
+    return not (auto_val and (1 in auto_val))
 
 
 
@@ -825,8 +891,6 @@ def rebuild_maps_store(v, eng):
 
 @callback(
 
-    Output("ax-speed-time", "figure"),
-
     Output("ax-speedrpm", "figure"),
 
     Output("ax-torquespeed", "figure"),
@@ -851,7 +915,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     if active_tab != "tab2":
 
-        return no_update, no_update, no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not v or not M:
 
@@ -933,26 +997,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
     fig_force = go.Figure()
 
-    fig_speedtime = go.Figure()
-
-
-
-    def cumtrap(x, y):
-
-        x = np.asarray(x, dtype=float)
-
-        y = np.asarray(y, dtype=float)
-
-        if x.size < 2:
-
-            return np.zeros_like(x)
-
-        dx = np.diff(x)
-
-        avg = 0.5 * (y[1:] + y[:-1])
-
-        return np.concatenate(([0.0], np.cumsum(avg * dx)))
-
 
 
     for li, lam in enumerate(loads):
@@ -1021,44 +1065,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
 
 
 
-            valid = np.isfinite(a_mps2) & (a_mps2 > 1e-3)
-
-            if np.count_nonzero(valid) < 2:
-
-                continue
-
-
-
-            v_mps_valid = v_mps[valid]
-
-            v_kmh_valid = v_kmh[valid]
-
-            a_valid = a_mps2[valid]
-
-            t = cumtrap(v_mps_valid, 1.0 / a_valid)
-
-
-
-
-            fig_speedtime.add_trace(go.Scatter(
-
-                x=t,
-
-                y=v_kmh_valid,
-
-                mode="lines",
-
-                line=dict(width=1.6, color=gear_colors[gi], dash=style),
-
-                showlegend=False,
-
-                legendgroup=f"λ{li}",
-
-                name=f"λ={lam:.2f}"
-
-            ))
-
-
 
 
 
@@ -1068,19 +1074,6 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     apply_dark(fig_accel, title="Acceleration vs vehicle speed (per gear) at selected loads")
 
     apply_dark(fig_force, title="Available tractive force (λ=1) and resistance vs speed")
-
-    apply_dark(fig_speedtime, title="Vehicle speed vs time (per gear at selected loads)")
-
-
-
-
-    fig_speedtime.update_xaxes(title="Time (s)")
-
-    fig_speedtime.update_yaxes(title="Vehicle speed (km/h)")
-
-
-
-
 
     v_all_kmh = np.linspace(0, v["top_speed_kmh"], 600)
 
@@ -1125,7 +1118,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         ))
 
 
-    return fig_speedtime, fig_speedrpm, fig_torque, fig_accel, fig_force
+    return fig_speedrpm, fig_torque, fig_accel, fig_force
 
 # ---------- Tab 3: engine map + sequences ----------
 
