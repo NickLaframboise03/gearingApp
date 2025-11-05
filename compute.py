@@ -1,14 +1,16 @@
 import numpy as np
 
-import tc
-
 from typing import Dict, Tuple
 
 from scipy.interpolate import RegularGridInterpolator
 
 
+import tc  # torque-converter model (tc.py in the same folder)
+
+
 
 # ----- Basic vehicle helpers -----
+
 
 def compute_tire_radius(v: Dict) -> float:
 
@@ -42,6 +44,7 @@ def F_aero(v: Dict, vel_mps):
 
 # ----- Maps -----
 
+
 def build_map_from_engine_struct(E: Dict) -> Dict:
 
     tq = np.asarray(E["fuel_map_torque_Nm"], dtype=float).ravel()
@@ -52,9 +55,9 @@ def build_map_from_engine_struct(E: Dict) -> Dict:
 
     # Make sure shape is [len(tq), len(sp)]
 
-    if gps.shape != (tq.size, sp.size):
+    if gps.shape != (tq.size, sp.shape[0]):
 
-        gps = gps.reshape(tq.size, sp.size)
+        gps = gps.reshape(tq.size, sp.shape[0])
 
 
     T, W = np.meshgrid(tq, sp, indexing="ij")
@@ -86,21 +89,13 @@ def build_map_from_engine_struct(E: Dict) -> Dict:
 
     )
 
-    converter = E.get("converter")
 
-    if converter:
+    # passthrough optional converter data, if present in engine JSON
 
-        M["converter"] = dict(
+    if "converter" in E:
 
-            speed_ratio=np.asarray(converter.get("speed_ratio", []), dtype=float).ravel(),
+        M["converter"] = E["converter"]
 
-            torque_ratio=np.asarray(converter.get("torque_ratio", []), dtype=float).ravel(),
-
-            k_norm=np.asarray(converter.get("k_norm", []), dtype=float).ravel(),
-
-            lockup_sr=float(converter.get("lockup_sr", 0.92)),
-
-        )
 
     return M
 
@@ -119,27 +114,6 @@ def rebuild_maps(v: Dict, M: Dict) -> Dict:
     return M
 
 
-def _tc_curves_from_map(M: Dict) -> Dict[str, np.ndarray]:
-
-    curves = (M or {}).get("converter")
-
-    if not curves:
-
-        curves = tc.DEFAULT_TC_CURVES
-
-    return dict(
-
-        speed_ratio=np.array(curves.get("speed_ratio", tc.DEFAULT_TC_CURVES["speed_ratio"]), dtype=float),
-
-        torque_ratio=np.array(curves.get("torque_ratio", tc.DEFAULT_TC_CURVES["torque_ratio"]), dtype=float),
-
-        k_norm=np.array(curves.get("k_norm", tc.DEFAULT_TC_CURVES["k_norm"]), dtype=float),
-
-        lockup_sr=float(curves.get("lockup_sr", tc.DEFAULT_TC_CURVES.get("lockup_sr", 0.92))),
-
-    )
-
-
 
 def interpolators(M: Dict):
 
@@ -147,7 +121,7 @@ def interpolators(M: Dict):
 
     sp = np.asarray(M["speed_radps"], dtype=float)
 
-    z  = np.asarray(M["bsfc_map_gpkWh"], dtype=float)
+    z = np.asarray(M["bsfc_map_gpkWh"], dtype=float)
 
 
     # clamp outside -> nan
@@ -166,25 +140,26 @@ def interpolators(M: Dict):
 
     T_wot = np.asarray(M["wot_torque_Nm"], dtype=float)
 
-    w_ct  = np.asarray(M["ct_speed_radps"], dtype=float)
+    w_ct = np.asarray(M["ct_speed_radps"], dtype=float)
 
-    T_ct  = np.asarray(M["ct_torque_Nm"], dtype=float)
+    T_ct = np.asarray(M["ct_torque_Nm"], dtype=float)
 
 
     def _interp1(xq, x, y):
 
-        return np.interp(xq, x, y, left=y[0], right=y[-1])
+        return np.interp(np.asarray(xq, dtype=float), x, y, left=y[0], right=y[-1])
 
 
-    T_WOT = lambda w: _interp1(np.asarray(w, dtype=float), w_wot, T_wot)
+    T_WOT = lambda w: _interp1(w, w_wot, T_wot)
 
-    T_CT  = lambda w: _interp1(np.asarray(w, dtype=float),  w_ct,  T_ct)
+    T_CT = lambda w: _interp1(w, w_ct, T_ct)
 
     return bsfc_fn, T_WOT, T_CT
 
 
 
 # ----- Cruise / FE -----
+
 
 def steady_cruise_curve(v: Dict, M: Dict, g_ix: int):
 
@@ -264,7 +239,42 @@ def steady_FE_in_gear(v: Dict, M: Dict, g_ix: int, v_kmh):
 
 
 
-# ----- Acceleration integrator (records gear, rpm, torque, shift points) -----
+# ----- Torque-converter helper -----
+
+
+def _tc_curves_from_map(M: Dict) -> Dict:
+
+    """
+
+    Extract converter curves from map M if present, otherwise use defaults
+
+    from tc.DEFAULT_TC_CURVES. Always returns numpy arrays.
+
+    """
+
+    curves = (M or {}).get("converter")
+
+    if not curves:
+
+        curves = tc.DEFAULT_TC_CURVES
+
+
+    return dict(
+
+        speed_ratio=np.asarray(curves.get("speed_ratio", tc.DEFAULT_TC_CURVES["speed_ratio"]), dtype=float),
+
+        torque_ratio=np.asarray(curves.get("torque_ratio", tc.DEFAULT_TC_CURVES["torque_ratio"]), dtype=float),
+
+        k_norm=np.asarray(curves.get("k_norm", tc.DEFAULT_TC_CURVES["k_norm"]), dtype=float),
+
+        lockup_sr=float(curves.get("lockup_sr", tc.DEFAULT_TC_CURVES["lockup_sr"])),
+
+    )
+
+
+
+# ----- Acceleration integrator (manual + optional TC) -----
+
 
 def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
@@ -283,11 +293,12 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
     nG = len(v["gears"])
 
+
+    # Gearshift schedule (vehicle-speed based)
+
     shift_kmh = list(shift_kmh or [])
 
     if len(shift_kmh) < nG-1:
-
-        # pad strictly increasing if user gave fewer
 
         base = list(shift_kmh)
 
@@ -300,7 +311,10 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
     bsfc_fn, T_WOT, T_CT = interpolators(M)
 
-    idle_w = idle_rpm*2*np.pi/60.0; red_w = redline_rpm*2*np.pi/60.0
+
+    idle_w = idle_rpm*2*np.pi/60.0
+
+    red_w = redline_rpm*2*np.pi/60.0
 
     Krpm2kmh = (2*np.pi*v["re"]/60.0)*3.6 / v["fd"]
 
@@ -308,17 +322,49 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
     v_goal_kmh = min(target_kmh, v_top_kmh)
 
+
+    # Auto / torque-converter settings
+
     auto_enabled = bool(v.get("auto_trans_enabled"))
+
     stall_rpm_user = v.get("stall_speed_rpm", 2600.0)
+
     try:
+
         stall_rpm_user = float(stall_rpm_user)
+
     except (TypeError, ValueError):
+
         stall_rpm_user = 2600.0
-    if stall_rpm_user <= 0:
+
+    if stall_rpm_user <= 0.0:
+
         stall_rpm_user = 2600.0
+
     stall_rpm_floor = max(float(idle_rpm), 1000.0)
+
     stall_rpm_use = max(stall_rpm_user, stall_rpm_floor)
+
     tc_curves = _tc_curves_from_map(M) if auto_enabled else None
+
+
+    def engine_torque_val(omega: float) -> float:
+
+        """Scalar engine torque map with lam load, clamped between idle and redline."""
+
+        w = float(min(max(omega, idle_w), red_w))
+
+        val = T_CT(w) + lam*(T_WOT(w) - T_CT(w))
+
+        try:
+
+            val = float(val)
+
+        except Exception:
+
+            val = float(np.asarray(val, dtype=float))
+
+        return max(0.0, val)
 
 
     def gear_of(vk):
@@ -332,22 +378,30 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
         return gi
 
 
-    t = 0.0; v_kmh = 0.0; fuel_cum_L = 0.0
+    t = 0.0
+
+    v_kmh = 0.0
+
+    fuel_cum_L = 0.0
 
     dv_mps = dv_kmh/3.6
 
-    t_vec  = [0.0]; v_vec = [0.0]
+    t_vec = [0.0]
 
-    rpm_hist = []; T_hist = []; a_hist = []; bsfc_hist = []; fuel_hist = [0.0]; gear_hist = []
+    v_vec = [0.0]
 
-    def clamp_engine_speed(omega):
-        return min(max(float(omega), idle_w), red_w)
 
-    def engine_torque_val(omega):
-        w = clamp_engine_speed(omega)
-        val = T_CT(w) + lam*(T_WOT(w) - T_CT(w))
-        return float(max(0.0, val))
+    rpm_hist = []
 
+    T_hist = []
+
+    a_hist = []
+
+    bsfc_hist = []
+
+    fuel_hist = [0.0]
+
+    gear_hist = []
 
 
     while v_kmh < v_goal_kmh - 1e-12:
@@ -356,49 +410,67 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         v_mps = v_kmh/3.6
 
+
         gi = gi_sched
 
-        while True:
+        w_from_wheels = (v_mps / v["re"]) * (v["gears"][gi]*v["fd"])
 
-            gear_ratio = v["gears"][gi]
 
-            omega_turb = (v_mps / v["re"]) * (gear_ratio * v["fd"])
+        # Optional redline-enforced upshift (still using wheel-based rpm estimate)
 
-            if auto_enabled:
+        if force_redline and w_from_wheels >= red_w and gi < nG-1:
 
-                res = tc.solve_tc_state(omega_turb, engine_torque_val, tc_curves, stall_rpm_use)
+            gi += 1
 
-                omega_engine = float(res.get("omega_pump", omega_turb))
+            w_from_wheels = (v_mps / v["re"]) * (v["gears"][gi]*v["fd"])
 
-                if not np.isfinite(omega_engine) or omega_engine <= 0.0:
 
-                    omega_engine = omega_turb
+        if auto_enabled:
 
-                T_eng = float(res.get("T_pump", engine_torque_val(omega_engine)))
+            # Turbine speed equals wheel-backcomputed speed
 
-                T_turb = float(res.get("T_turb", T_eng))
+            omega_turb = w_from_wheels
 
-                F_wheel = (T_turb * (gear_ratio * v["fd"] * v["eta_dl"])) / v["re"]
 
-            else:
+            # Solve converter state for this step
 
-                omega_engine = clamp_engine_speed(omega_turb)
+            res_tc = tc.solve_tc_state(omega_turb, engine_torque_val, tc_curves, stall_rpm_use)
 
-                T_eng = engine_torque_val(omega_engine)
+            omega_engine = float(res_tc.get("omega_pump", w_from_wheels))
 
-                F_wheel = T_eng * (gear_ratio * v["fd"] * v["eta_dl"]) / v["re"]
+            if not np.isfinite(omega_engine) or omega_engine <= 0.0:
 
-            if force_redline and gi < nG-1 and omega_engine >= red_w:
+                omega_engine = w_from_wheels
 
-                gi += 1
 
-                continue
+            # Clamp engine speed and use that for fuel/BSFC calculations
 
-            break
+            w_eff = min(max(omega_engine, idle_w), red_w)
 
-        omega_map = clamp_engine_speed(omega_engine)
 
-        Rtot    = F_roll(v, v_mps) + F_aero(v, v_mps)
+            # Engine torque (pump side) and turbine torque
+
+            T_eng = float(res_tc.get("T_pump", engine_torque_val(w_eff)))
+
+            T_turb = float(res_tc.get("T_turb", T_eng))
+
+
+            # Wheel force from turbine torque
+
+            F_wheel = T_turb * (v["gears"][gi]*v["fd"]*v["eta_dl"]) / v["re"]
+
+        else:
+
+            # Manual: direct mechanical connection
+
+            w_eff = min(max(w_from_wheels, idle_w), red_w)
+
+            T_eng = max(0.0, T_CT(w_eff) + lam*(T_WOT(w_eff) - T_CT(w_eff)))
+
+            F_wheel = T_eng * (v["gears"][gi]*v["fd"]*v["eta_dl"]) / v["re"]
+
+
+        Rtot = F_roll(v, v_mps) + F_aero(v, v_mps)
 
         a = (F_wheel - Rtot) / v["m"]
 
@@ -406,13 +478,19 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
             break
 
+
         dt = dv_mps / a
 
-        P_kW = T_eng * omega_map / 1000.0
 
-        bsfc_gpkWh = bsfc_fn(np.array([T_eng]), np.array([omega_map]))[0]
+        # Fuel consumption based on engine side
+
+        P_kW = T_eng*w_eff/1000.0
+
+        bsfc_gpkWh = bsfc_fn(np.array([T_eng]), np.array([w_eff]))[0]
 
         if not np.isfinite(bsfc_gpkWh):
+
+            # outside map; bail
 
             break
 
@@ -422,11 +500,13 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         fuel_cum_L += max(0.0, fuel_step_L)
 
+
         t += dt
 
         v_kmh = min(v_kmh + dv_kmh, v_goal_kmh)
 
-        rpm_hist.append(omega_engine*60.0/(2*np.pi))
+
+        rpm_hist.append(w_eff*60.0/(2*np.pi))
 
         T_hist.append(T_eng)
 
@@ -438,7 +518,10 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         gear_hist.append(gi+1)
 
-        t_vec.append(t); v_vec.append(v_kmh)
+        t_vec.append(t)
+
+        v_vec.append(v_kmh)
+
 
     R = dict(
 

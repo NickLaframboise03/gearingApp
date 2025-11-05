@@ -1,0 +1,287 @@
+Model Assumptions and Limitations
+
+=================================
+
+
+This file describes what the model does, what it assumes, and where it is
+
+not accurate. It is meant as a quick reference when using or modifying
+
+the code.
+
+
+1. Purpose and Scope
+
+--------------------
+
+
+- 1D longitudinal model only (straight-line motion).
+
+- Used to compare gearing, engines, and basic vehicle setup.
+
+- Focused on:
+
+  - Acceleration runs (time, distance, fuel).
+
+  - Steady-state cruising (fuel economy vs speed).
+
+- Not a detailed vehicle dynamics or transmission calibration tool.
+
+
+2. Vehicle and Environment
+
+--------------------------
+
+
+- Vehicle is a rigid body with fixed mass:
+
+  - No load transfer, suspension motion, or pitch.
+
+  - Fuel mass change is ignored.
+
+- Road is assumed perfectly level:
+
+  - No grade or elevation effects yet (planned future feature).
+
+- Aerodynamic drag:
+
+  - F_aero = 0.5 * rho_air * Cd * A_front * v^2
+
+  - rho_air, Cd, and A_front are constant over a run.
+
+- Rolling resistance:
+
+  - Speed-dependent model based on a Fiat tire study.
+
+  - Coefficients chosen to represent modern passenger car tires.
+
+
+3. Engine and Fuel Model
+
+------------------------
+
+
+- Engine map is based on EPA study data:
+
+  - Grid of (speed, torque, fuel mass flow).
+
+  - Full-throttle (WOT) torque vs speed.
+
+  - Closed-throttle (drag) torque vs speed.
+
+- BSFC (g/kWh) is derived directly from measured torque, speed, and
+
+  fuel flow, without extra fitting.
+
+- Brake thermal efficiency is computed from BSFC and the user-supplied
+
+  lower heating value (LHV).
+
+
+4. Partial-Load Behaviour
+
+-------------------------
+
+
+- Normalized load input lambda in [0, 1] is used to blend torque:
+
+  - T(lambda) = T_closed_throttle + lambda * (T_WOT - T_CT).
+
+- BSFC and efficiency at partial load are read directly from the map at
+
+  that (speed, torque) point.
+
+- No artificial corrections are applied to partial-load efficiency:
+
+  - This is deliberate, to avoid distorting the EPA data which already
+
+    matches real logged behaviour for the target engine.
+
+- The main use is medium to high load (accel and cruising), where the
+
+  map is most relevant.
+
+
+5. Drivetrain and Efficiency
+
+----------------------------
+
+
+- Driveline is defined by:
+
+  - Gear ratios (transmission).
+
+  - Final drive ratio.
+
+  - A single overall drivetrain efficiency eta_dl.
+
+- eta_dl is assumed constant:
+
+  - Same efficiency in all gears and speeds.
+
+  - Used as a simple calibration knob to match real 0–100 km/h and
+
+    cruise fuel economy.
+
+- Detailed, gear-dependent efficiency is not modelled.
+
+
+6. Transmission and Torque Converter
+
+------------------------------------
+
+
+- Shift logic:
+
+  - Simple, speed-based upshift thresholds with redline enforcement.
+
+  - Intended to be "good enough" for comparing setups, not to copy any
+
+    OEM shift strategy.
+
+- Torque converter (TC):
+
+  - Simple, phenomenological model driven by stall RPM and a basic
+
+    torque multiplication vs speed-ratio shape.
+
+  - Intended only to capture the general off-the-line behaviour of an
+
+    automatic.
+
+  - No detailed TC hydrodynamics or real converter maps are used.
+
+- Cruise assumption:
+
+  - For steady-state fuel economy in top gear, the automatic is assumed
+
+    to be in lockup (no slip, TC treated as a rigid coupling).
+
+
+7. Forces and Integration
+
+-------------------------
+
+
+- Longitudinal equation:
+
+  - m * dv/dt = F_drive - (F_aero + F_roll)
+
+- F_drive comes from:
+
+  - Engine torque -> gearbox -> final drive -> wheel torque,
+
+  - Multiplied by eta_dl and, if applicable, torque converter effects.
+
+- Traction limits:
+
+  - Not modelled. Tires are assumed to always have enough grip.
+
+  - No wheelspin, traction control, or ABS behaviour.
+
+- Time-domain accel:
+
+  - Simulation steps through speed/time.
+
+  - At each step, model computes gear, engine speed, torque, wheel
+
+    force, road loads, acceleration, fuel flow, and distance.
+
+- Steady-state cruise:
+
+  - For a given speed and gear, road loads are balanced by engine
+
+    torque.
+
+  - Fuel use is computed from engine power and BSFC.
+
+
+8. Calibration and Data Sources
+
+-------------------------------
+
+
+- Engine:
+
+  - Based on EPA engine map data (speed, torque, fuel flow).
+
+  - BSFC and efficiency are direct transformations of these data.
+
+- Rolling resistance:
+
+  - Coefficients from a Fiat study on modern passenger car tires.
+
+- Drivetrain efficiency:
+
+  - User-adjustable scalar eta_dl used to align predictions with real
+
+    measured vehicle performance.
+
+
+9. Known Limitations
+
+--------------------
+
+
+The model currently does NOT include:
+
+
+- Road grade or hill effects (uphill/downhill forces).
+
+- Tire traction limits or grip modelling.
+
+- Handling, cornering, or lateral dynamics.
+
+- Thermal effects (engine, brakes, fluids, temperature-dependent
+
+  losses).
+
+- Detailed transmission control logic (no throttle- or mode-dependent
+
+  shifting).
+
+- Detailed torque converter clutch behaviour beyond the simple launch /
+
+  lockup approximation.
+
+- Start-stop, idling behaviour, or explicit accessory loads (A/C, etc.).
+
+  These are implicitly absorbed into the engine map and eta_dl.
+
+
+10. How to Use the Results
+
+--------------------------
+
+
+- Best suited for:
+
+  - Comparing gearing, engines, and high-level vehicle parameters.
+
+  - Studying accel curves, 0–100 km/h times, and cruise fuel economy on
+
+    level ground.
+
+- Most accurate when:
+
+  - Operation stays near the measured engine map region.
+
+  - Conditions are close to flat-road, normal passenger car use.
+
+- Less accurate for:
+
+  - Very light-load operation far from the main BSFC region.
+
+  - Situations dominated by traction limits.
+
+  - Steep grades, towing, or extreme environments (until grade and extra
+
+    load features are added).
+
+
+Within these limits, the model provides a fast and transparent way to
+
+explore how engine characteristics, gearing, and basic vehicle data
+
+affect acceleration and cruising performance.
+
