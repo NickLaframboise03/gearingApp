@@ -1530,6 +1530,11 @@ def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_
 
 
 @callback(
+    Output("store-vehicle", "data", allow_duplicate=True),
+    Output("vehicle-profile-name", "value"),
+    Input("vehicle-profile", "value"),
+    prevent_initial_call=True
+)
 
     Output("store-vehicle", "data"),
 
