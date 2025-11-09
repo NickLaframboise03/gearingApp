@@ -1,0 +1,230 @@
+Git workflow for vehicle-efficiency-dash (server)
+
+=================================================
+
+
+Repository location on this server
+
+----------------------------------
+
+Project directory:
+
+    ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+Make sure you are in that folder before running any git commands:
+
+
+    cd ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+    git status
+
+
+
+1) Pull the latest changes from GitHub (no local edits)
+
+-------------------------------------------------------
+
+Use this when you have NOT modified anything locally (or you don’t care about untracked files).
+
+
+Commands:
+
+
+    cd ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+    # Check that there are no local changes
+
+    git status
+
+
+    # Pull the latest version of "main" from GitHub
+
+    git pull --rebase origin main
+
+
+If there are no local changes, this will just update the folder to match GitHub.
+
+
+
+2) Pull the latest changes when you HAVE local edits
+
+----------------------------------------------------
+
+Use this when you have modified files on the server and you want to keep those changes AND also bring in any new commits from GitHub.
+
+
+Step A – commit your local changes:
+
+
+    cd ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+    # See what changed
+
+    git status
+
+
+    # Stage all changes (new/modified/deleted files)
+
+    git add .
+
+
+    # Commit them with a short message
+
+    git commit -m "Describe what changed on server (date/feature)"
+
+
+Step B – pull from GitHub with rebase:
+
+
+    git pull --rebase origin main
+
+
+What this does:
+
+- Downloads new commits from GitHub
+
+- Replays your local commit(s) on top of them
+
+
+If there are merge conflicts, Git will tell you which files are affected.
+
+Resolve conflicts in those files, then:
+
+
+    git add <file_you_fixed>
+
+    git rebase --continue
+
+
+Repeat until the rebase completes. You can confirm with:
+
+
+    git status
+
+
+It should say something like:
+
+    "On branch main
+
+     Your branch is ahead of 'origin/main' by X commits."
+
+
+
+3) Push your current server version back to GitHub
+
+--------------------------------------------------
+
+After committing changes (and after any rebase is complete), push to GitHub:
+
+
+    cd ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+    # Optional: confirm what will be pushed
+
+    git status
+
+
+    # Push local main -> origin/main on GitHub
+
+    git push origin main
+
+
+You may be prompted for GitHub credentials:
+
+- Username: your GitHub username
+
+- Password/token: personal access token (if passwords are not accepted)
+
+
+
+4) Typical workflow when updating the app on the server
+
+-------------------------------------------------------
+
+1) Go to project folder:
+
+
+       cd ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+2) Get the latest from GitHub:
+
+
+       git pull --rebase origin main
+
+
+3) Make your code changes (edit app.py, compute.py, etc.) and test.
+
+
+4) Save vehicle_profiles.json and any other updates you want to keep.
+
+
+5) Stage and commit:
+
+
+       git add .
+
+       git commit -m "Short description of change"
+
+
+6) Push back to GitHub:
+
+
+       git push origin main
+
+
+
+5) Quick command summary
+
+------------------------
+
+From inside:
+
+    ~/nick/vehicle-efficiency-dash/new-vehicle-efficiency-dash
+
+
+Check status:
+
+    git status
+
+
+Pull latest (no local changes or after commit):
+
+    git pull --rebase origin main
+
+
+Stage everything:
+
+    git add .
+
+
+Commit:
+
+    git commit -m "message"
+
+
+Push to GitHub:
+
+    git push origin main
+
+
+Abort a broken rebase (if things get messy):
+
+    git rebase --abort
+
+
+
+Notes
+
+-----
+
+- Always run `git status` before `git pull` or `git push` to see the current state.
+
+- Commit your changes BEFORE pulling with `--rebase` to avoid losing work.
+
+- vehicle_profiles.json is tracked, so any updates to profiles on this server can be committed and pushed like any other file.
+

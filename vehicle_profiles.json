@@ -84,11 +84,11 @@
           0.696
         ],
         "idle_rpm": 900,
-        "redline_rpm": 5650,
+        "redline_rpm": 6000,
         "auto_trans_enabled": true,
         "stall_speed_rpm": 2600,
         "re": 0.36879999999999996,
-        "top_speed_kmh": 330.0161042618534
+        "top_speed_kmh": 350.459579747101
       },
       "engine_file": "automationLS60_stock.engine.json"
     },
