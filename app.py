@@ -1536,6 +1536,16 @@ def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_
     prevent_initial_call=True
 )
 
+    Output("store-vehicle", "data"),
+
+    Output("vehicle-profile-name", "value"),
+
+    Input("vehicle-profile", "value"),
+
+    prevent_initial_call=True
+
+)
+
 
 def apply_vehicle_profile(profile_name):
 
