@@ -1418,6 +1418,35 @@ def toggle_stall_disabled(auto_val):
 
 )
 
+            vehicle_data = copy.deepcopy(vehicle)
+
+            try:
+
+                vehicle_data["re"] = C.compute_tire_radius(vehicle_data)
+
+                vehicle_data = C.update_derived(vehicle_data)
+
+            except Exception:
+
+                pass
+
+            return vehicle_data, profile_name
+
+    raise PreventUpdate
+
+
+# ---------- Engine dropdown / periodic rescan ----------
+
+
+@callback(
+
+    Output("store-engine", "data"),
+
+    Output("engine-select", "options"),
+
+    Output("engine-select", "value"),
+
+    Input("engine-select", "value"),
 
 def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_value, selected_value, eng_state):
 
