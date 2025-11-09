@@ -1418,6 +1418,44 @@ def toggle_stall_disabled(auto_val):
 
 )
 
+            vehicle_data = copy.deepcopy(vehicle)
+
+            try:
+
+                vehicle_data["re"] = C.compute_tire_radius(vehicle_data)
+
+                vehicle_data = C.update_derived(vehicle_data)
+
+            except Exception:
+
+                pass
+
+            return vehicle_data, profile_name
+
+    raise PreventUpdate
+
+    Output("vehicle-profile", "value"),
+
+    Input("iv-profiles", "n_intervals"),
+
+    Input("btn-save-profile", "n_clicks"),
+
+    Input("btn-delete-profile", "n_clicks"),
+
+    State("vehicle-profile-name", "value"),
+
+    State("store-vehicle", "data"),
+
+    State("engine-select", "value"),
+
+    State("vehicle-profile", "value"),
+
+    State("store-engine", "data"),
+
+    prevent_initial_call=False
+
+)
+
 
 def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_value, selected_value, eng_state):
 
@@ -1545,18 +1583,175 @@ def apply_vehicle_profile(profile_name):
     if not profile:
         raise PreventUpdate
 
-    vehicle_payload = profile.get("vehicle")
-    if not isinstance(vehicle_payload, dict):
-        raise PreventUpdate
+    Output("store-engine", "data"),
 
-    vehicle_data = copy.deepcopy(vehicle_payload)
-    try:
-        vehicle_data["re"] = C.compute_tire_radius(vehicle_data)
-        vehicle_data = C.update_derived(vehicle_data)
-    except Exception:
-        pass
+    Output("engine-select", "options"),
 
-    return vehicle_data, profile_name
+    Output("engine-select", "value"),
+
+    Input("engine-select", "value"),
+
+def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_value, selected_value, eng_state):
+
+    triggered = dash_ctx_trigger()
+
+    data = load_vehicle_profiles()
+
+    profiles = data.get("profiles", [])
+
+    current_value = selected_value
+
+
+    if triggered == "btn-save-profile":
+
+        if not n_save or not name or not str(name).strip() or not vehicle_data:
+
+            raise PreventUpdate
+
+        trimmed = str(name).strip()
+
+        vehicle_payload = copy.deepcopy(vehicle_data)
+
+        try:
+
+            vehicle_payload["re"] = C.compute_tire_radius(vehicle_payload)
+
+            vehicle_payload = C.update_derived(vehicle_payload)
+
+        except Exception:
+
+            pass
+
+        engine_file = None if engine_value is None else str(engine_value)
+
+        if eng_state:
+
+            for item in eng_state.get("items", []):
+
+                if item.get("name") == engine_value:
+
+                    engine_file = item.get("source_file") or engine_file
+
+                    break
+
+        profile = {
+
+            "name": trimmed,
+
+            "vehicle": vehicle_payload,
+
+            "engine_file": engine_file,
+
+        }
+
+        new_profiles = []
+
+        replaced = False
+
+        for entry in profiles:
+
+            if entry.get("name") == trimmed:
+
+                new_profiles.append(profile)
+
+                replaced = True
+
+            else:
+
+                new_profiles.append(entry)
+
+        if not replaced:
+
+            new_profiles.append(profile)
+
+        save_vehicle_profiles({"profiles": new_profiles})
+
+        profiles = new_profiles
+
+        current_value = trimmed
+
+    elif triggered == "btn-delete-profile":
+
+        if not n_delete or not selected_value:
+
+            raise PreventUpdate
+
+        new_profiles = [entry for entry in profiles if entry.get("name") != selected_value]
+
+        if len(new_profiles) == len(profiles):
+
+            raise PreventUpdate
+
+        save_vehicle_profiles({"profiles": new_profiles})
+
+        profiles = new_profiles
+
+        current_value = None
+
+
+    options = [{"label": entry.get("name"), "value": entry.get("name")} for entry in profiles if entry.get("name")]
+
+    valid_values = {opt["value"] for opt in options}
+
+    if current_value not in valid_values:
+
+        current_value = None
+
+
+    return options, current_value
+
+
+@callback(
+    Output("store-vehicle", "data", allow_duplicate=True),
+    Output("vehicle-profile-name", "value"),
+    Input("vehicle-profile", "value"),
+    prevent_initial_call=True
+)
+
+    Output("store-vehicle", "data"),
+
+    Output("vehicle-profile-name", "value"),
+
+    Input("vehicle-profile", "value"),
+
+    prevent_initial_call=True
+
+)
+
+
+def apply_vehicle_profile(profile_name):
+
+    if not profile_name:
+
+        return no_update, ""
+
+    data = load_vehicle_profiles()
+
+    for entry in data.get("profiles", []):
+
+        if entry.get("name") == profile_name:
+
+            vehicle = entry.get("vehicle")
+
+            if not isinstance(vehicle, dict):
+
+                raise PreventUpdate
+
+            vehicle_data = copy.deepcopy(vehicle)
+
+            try:
+
+                vehicle_data["re"] = C.compute_tire_radius(vehicle_data)
+
+                vehicle_data = C.update_derived(vehicle_data)
+
+            except Exception:
+
+                pass
+
+            return vehicle_data, profile_name
+
+    raise PreventUpdate
 
 
 # ---------- Engine dropdown / periodic rescan ----------
