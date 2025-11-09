@@ -1,0 +1,126 @@
+{
+  "profiles": [
+    {
+      "name": "2014 Mazda 3 2.0 Manual",
+      "vehicle": {
+        "m": 1340,
+        "Cd": 0.28,
+        "Af": 2,
+        "rho_air": 1.23,
+        "rho_fuel": 0.73,
+        "LHV": 42887000,
+        "g": 9.81,
+        "eta_dl": 0.89,
+        "tire_w": 215,
+        "tire_ar": 45,
+        "tire_rim_in": 17,
+        "fd": 3.85,
+        "gears": [
+          3.55,
+          1.95,
+          1.3,
+          1.03,
+          0.84,
+          0.68
+        ],
+        "idle_rpm": 900,
+        "redline_rpm": 6500,
+        "auto_trans_enabled": false,
+        "stall_speed_rpm": 2600,
+        "re": 0.31265,
+        "top_speed_kmh": 292.6397156810474
+      },
+      "engine_file": "2014_Mazda_2_0L_SKYACTIV_Engine_Tier_2_Fuel.engine.json"
+    },
+    {
+      "name": "C3 Corvette Restomod",
+      "vehicle": {
+        "m": 1500,
+        "Cd": 0.45,
+        "Af": 1.8,
+        "rho_air": 1.23,
+        "rho_fuel": 0.73,
+        "LHV": 42887000,
+        "g": 9.81,
+        "eta_dl": 0.89,
+        "tire_w": 285,
+        "tire_ar": 45,
+        "tire_rim_in": 17,
+        "fd": 3.73,
+        "gears": [
+          3.059,
+          1.625,
+          1,
+          0.696
+        ],
+        "idle_rpm": 900,
+        "redline_rpm": 6600,
+        "auto_trans_enabled": true,
+        "stall_speed_rpm": 2600,
+        "re": 0.34414999999999996,
+        "top_speed_kmh": 329.84108983254697
+      },
+      "engine_file": "automationLS60.engine.json"
+    },
+    {
+      "name": "2005 LS Swap Blazer",
+      "vehicle": {
+        "m": 1800,
+        "Cd": 0.45,
+        "Af": 2.35,
+        "rho_air": 1.23,
+        "rho_fuel": 0.73,
+        "LHV": 42887000,
+        "g": 9.81,
+        "eta_dl": 0.89,
+        "tire_w": 255,
+        "tire_ar": 50,
+        "tire_rim_in": 19,
+        "fd": 3.42,
+        "gears": [
+          3.059,
+          1.625,
+          1,
+          0.696
+        ],
+        "idle_rpm": 900,
+        "redline_rpm": 5650,
+        "auto_trans_enabled": true,
+        "stall_speed_rpm": 2600,
+        "re": 0.36879999999999996,
+        "top_speed_kmh": 330.0161042618534
+      },
+      "engine_file": "automationLS60_stock.engine.json"
+    },
+    {
+      "name": "C5 Corvette",
+      "vehicle": {
+        "m": 1500,
+        "Cd": 0.29,
+        "Af": 2.04,
+        "rho_air": 1.23,
+        "rho_fuel": 0.73,
+        "LHV": 42887000,
+        "g": 9.81,
+        "eta_dl": 0.89,
+        "tire_w": 245,
+        "tire_ar": 40,
+        "tire_rim_in": 18,
+        "fd": 2.73,
+        "gears": [
+          3.059,
+          1.625,
+          1,
+          0.696
+        ],
+        "idle_rpm": 900,
+        "redline_rpm": 5650,
+        "auto_trans_enabled": true,
+        "stall_speed_rpm": 2000,
+        "re": 0.3266,
+        "top_speed_kmh": 366.1203427903695
+      },
+      "engine_file": "automationLS60_stock.engine.json"
+    }
+  ]
+}
