@@ -289,6 +289,14 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
     dv_kmh            = opts.get("dv_kmh", 0.25)
 
     force_redline     = opts.get("force_redline", True)
+    stop_distance_m   = opts.get("stop_distance_m")
+
+    try:
+        stop_distance_m = float(stop_distance_m)
+        if not np.isfinite(stop_distance_m) or stop_distance_m <= 0.0:
+            stop_distance_m = None
+    except (TypeError, ValueError):
+        stop_distance_m = None
 
 
     nG = len(v["gears"])
@@ -403,12 +411,19 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
     gear_hist = []
 
+    dist_hist = [0.0]
+
+    distance_accum = 0.0
+
 
     while v_kmh < v_goal_kmh - 1e-12:
+
+        v_prev_kmh = v_kmh
 
         gi_sched = gear_of(v_kmh)
 
         v_mps = v_kmh/3.6
+        v_prev_mps = v_mps
 
 
         gi = gi_sched
@@ -481,7 +496,6 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         dt = dv_mps / a
 
-
         # Fuel consumption based on engine side
 
         P_kW = T_eng*w_eff/1000.0
@@ -498,12 +512,34 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         fuel_step_L = (mdot_gps * dt) / (rho_fuel_kg_per_L*1000.0)
 
-        fuel_cum_L += max(0.0, fuel_step_L)
+        v_next_kmh = min(v_kmh + dv_kmh, v_goal_kmh)
+        v_next_mps = v_next_kmh / 3.6
+        distance_step = 0.5 * (v_prev_mps + v_next_mps) * dt
 
+        stop_now = False
+        if stop_distance_m is not None:
+            remaining = stop_distance_m - distance_accum
+            if remaining <= 0.0:
+                break
+            if distance_step >= remaining:
+                stop_now = True
+                if distance_step > 1e-12:
+                    frac = remaining / distance_step
+                else:
+                    frac = 0.0
+                dt *= frac
+                fuel_step_L *= frac
+                v_next_kmh = v_prev_kmh + (v_next_kmh - v_prev_kmh) * frac
+                v_next_mps = v_prev_mps + (v_next_mps - v_prev_mps) * frac
+                distance_step = remaining
+
+        fuel_cum_L += max(0.0, fuel_step_L)
 
         t += dt
 
-        v_kmh = min(v_kmh + dv_kmh, v_goal_kmh)
+        v_kmh = v_next_kmh
+
+        distance_accum += distance_step
 
 
         rpm_hist.append(w_eff*60.0/(2*np.pi))
@@ -522,6 +558,11 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         v_vec.append(v_kmh)
 
+        dist_hist.append(distance_accum)
+
+        if stop_now:
+            break
+
 
     R = dict(
 
@@ -533,7 +574,7 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
 
         fuel_L=fuel_cum_L,
 
-        distance_m=np.trapz(np.asarray(v_vec)/3.6, np.asarray(t_vec)),
+        distance_m=float(distance_accum),
 
         trace=dict(
 
@@ -552,6 +593,8 @@ def accel_fuel_to_speed_core(v: Dict, M: Dict, target_kmh: float,
             bsfc_gpkWh=np.asarray(bsfc_hist),
 
             fuel_cum_L=np.asarray(fuel_hist),
+
+            distance_m=np.asarray(dist_hist),
 
         )
 

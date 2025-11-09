@@ -594,6 +594,11 @@ def tab2_layout(_v):
 
 def tab3_layout(v, _eng):
     nG = len(v.get("gears", [])) if v else 0
+    default_shift_rpm = 6500.0
+    try:
+        default_shift_rpm = float((v or {}).get("redline_rpm", default_shift_rpm))
+    except (TypeError, ValueError):
+        default_shift_rpm = 6500.0
 
     return html.Div(
         [
@@ -701,12 +706,40 @@ def tab3_layout(v, _eng):
                     ),
                     html.Div(
                         [
+                            html.Label("Shift schedule:"),
+                            dbc.RadioItems(
+                                id="shift-mode",
+                                options=[
+                                    {
+                                        "label": " Speeds",
+                                        "value": "speed",
+                                    },
+                                    {
+                                        "label": " Engine RPM",
+                                        "value": "rpm",
+                                    },
+                                ],
+                                value="speed",
+                                inline=True,
+                                className="ms-2",
+                            ),
+                            html.Br(),
                             html.Label("Shift speeds [km/h]:"),
                             dbc.Input(
                                 id="shift-speeds",
                                 type="text",
                                 value="40 65 100 130 160",
                                 style={"width": "320px"},
+                            ),
+                            html.Br(),
+                            html.Label("Shift RPM:"),
+                            dbc.Input(
+                                id="shift-rpm",
+                                type="number",
+                                value=round(default_shift_rpm),
+                                min=0,
+                                step=50,
+                                style={"width": "160px"},
                             ),
                         ],
                         className="bar-cell",
@@ -769,6 +802,12 @@ def tab3_layout(v, _eng):
                                 "Add sequence",
                                 id="btn-add-seq",
                                 color="primary",
+                                className="me-2",
+                            ),
+                            dbc.Button(
+                                "Add quarter mile",
+                                id="btn-add-quarter",
+                                color="secondary",
                                 className="me-2",
                             ),
                             dbc.Button(
@@ -1767,48 +1806,85 @@ def update_map_and_time(
                     )
                 )
 
-        ts = np.asarray(Tt.get("t_s", []))
-        vk = np.asarray(Tt.get("v_kmh", []))
-        fk = np.asarray(Tt.get("fuel_cum_L", []))
-        fig_v.add_trace(
-            go.Scatter(
-                x=ts,
-                y=vk,
-                mode="lines",
-                line=dict(color=col, width=2),
-                name=nm,
-                legendgroup=nm,
-            )
-        )
-        fig_f.add_trace(
-            go.Scatter(
-                x=ts,
-                y=fk,
-                mode="lines",
-                line=dict(color=col, width=2),
-                name=nm,
-                legendgroup=nm,
-            )
-        )
+        ts = np.asarray(Tt.get("t_s", []), dtype=float)
+        vk = np.asarray(Tt.get("v_kmh", []), dtype=float)
+        fk_raw = np.asarray(Tt.get("fuel_cum_L", []), dtype=float)
 
-        # Distance vs time + distance markers
-        dist = np.array([])
-        if ts.size and vk.size and ts.size == vk.size:
-            vk_mps = vk / 3.6
-            if ts.size >= 2:
-                dist = np.concatenate(
-                    (
-                        [0.0],
-                        np.cumsum(
-                            0.5
-                            * (vk_mps[1:] + vk_mps[:-1])
-                            * np.diff(ts)
-                        ),
+        if fk_raw.size and ts.size:
+            if fk_raw.size == ts.size:
+                fk = fk_raw
+            elif fk_raw.size + 1 == ts.size:
+                fk = np.concatenate(([0.0], fk_raw))
+            elif ts.size > 1 and fk_raw.size > 1:
+                fk = np.interp(
+                    np.linspace(0.0, 1.0, ts.size),
+                    np.linspace(0.0, 1.0, fk_raw.size),
+                    fk_raw,
+                )
+            else:
+                fill_val = float(fk_raw[-1]) if fk_raw.size else 0.0
+                fk = np.full(ts.size, fill_val)
+        else:
+            fk = np.asarray([], dtype=float)
+
+        if ts.size and vk.size:
+            if ts.size == vk.size:
+                fig_v.add_trace(
+                    go.Scatter(
+                        x=ts,
+                        y=vk,
+                        mode="lines",
+                        line=dict(color=col, width=2),
+                        name=nm,
+                        legendgroup=nm,
                     )
                 )
             else:
-                dist = np.zeros_like(ts)
+                common = min(ts.size, vk.size)
+                fig_v.add_trace(
+                    go.Scatter(
+                        x=ts[:common],
+                        y=vk[:common],
+                        mode="lines",
+                        line=dict(color=col, width=2),
+                        name=nm,
+                        legendgroup=nm,
+                    )
+                )
 
+        if ts.size and fk.size and ts.size == fk.size:
+            fig_f.add_trace(
+                go.Scatter(
+                    x=ts,
+                    y=fk,
+                    mode="lines",
+                    line=dict(color=col, width=2),
+                    name=nm,
+                    legendgroup=nm,
+                )
+            )
+
+        # Distance vs time + distance markers
+        dist = np.asarray(Tt.get("distance_m", []), dtype=float)
+        if not (dist.size and ts.size and dist.size == ts.size):
+            dist = np.array([])
+            if ts.size and vk.size and ts.size == vk.size:
+                vk_mps = vk / 3.6
+                if ts.size >= 2:
+                    dist = np.concatenate(
+                        (
+                            [0.0],
+                            np.cumsum(
+                                0.5
+                                * (vk_mps[1:] + vk_mps[:-1])
+                                * np.diff(ts)
+                            ),
+                        )
+                    )
+                else:
+                    dist = np.zeros_like(ts)
+
+        if dist.size and ts.size and dist.size == ts.size:
             fig_d.add_trace(
                 go.Scatter(
                     x=ts,
@@ -1855,63 +1931,145 @@ def update_map_and_time(
                     )
                 )
 
+            extra_markers = S.get("distance_markers", []) or []
+            for m in extra_markers:
+                try:
+                    m_val = float(m)
+                except (TypeError, ValueError):
+                    continue
+                if not np.isfinite(m_val) or m_val < 0:
+                    continue
+                if dist.size < 2 or m_val > np.nanmax(dist):
+                    continue
+                j = int(np.searchsorted(dist, m_val))
+                if j == 0 or j >= dist.size:
+                    continue
+                t0, t1 = ts[j - 1], ts[j]
+                d0, d1 = dist[j - 1], dist[j]
+                if (
+                    not np.isfinite(d1 - d0)
+                    or abs(d1 - d0) < 1e-12
+                ):
+                    continue
+                frac = (m_val - d0) / (d1 - d0)
+                t_cross = t0 + (t1 - t0) * frac
+
+                def _interp(arr):
+                    if arr.size == ts.size:
+                        return arr[j - 1] + (arr[j] - arr[j - 1]) * frac
+                    return np.nan
+
+                v_cross = _interp(vk)
+                f_cross = _interp(fk)
+                label = f"{int(round(m_val))} m"
+                marker_style = dict(
+                    symbol="star",
+                    size=11,
+                    line=dict(color="white", width=1.2),
+                    color=col,
+                )
+
+                if np.isfinite(v_cross):
+                    fig_v.add_trace(
+                        go.Scatter(
+                            x=[float(t_cross)],
+                            y=[float(v_cross)],
+                            mode="markers+text",
+                            text=[label],
+                            textposition="top center",
+                            marker=marker_style,
+                            showlegend=False,
+                            legendgroup=nm,
+                        )
+                    )
+                if np.isfinite(f_cross):
+                    fig_f.add_trace(
+                        go.Scatter(
+                            x=[float(t_cross)],
+                            y=[float(f_cross)],
+                            mode="markers+text",
+                            text=[label],
+                            textposition="top center",
+                            marker=marker_style,
+                            showlegend=False,
+                            legendgroup=nm,
+                        )
+                    )
+                fig_d.add_trace(
+                    go.Scatter(
+                        x=[float(t_cross)],
+                        y=[float(m_val)],
+                        mode="markers+text",
+                        text=[label],
+                        textposition="top center",
+                        marker=marker_style,
+                        showlegend=False,
+                        legendgroup=nm,
+                    )
+                )
+
         gear = np.asarray(Tt.get("gear", []))
         if gear.size:
             change = np.nonzero(
                 np.r_[False, np.diff(gear) != 0]
             )[0]
-            fig_v.add_trace(
-                go.Scatter(
-                    x=ts[change],
-                    y=vk[change],
-                    mode="markers",
-                    marker=dict(
-                        symbol="circle",
-                        size=7,
-                        color=col,
-                        line=dict(
-                            color="white", width=1
-                        ),
-                    ),
-                    showlegend=False,
-                    legendgroup=nm,
-                )
-            )
-            fig_f.add_trace(
-                go.Scatter(
-                    x=ts[change],
-                    y=fk[change],
-                    mode="markers",
-                    marker=dict(
-                        symbol="circle",
-                        size=7,
-                        color=col,
-                        line=dict(
-                            color="white", width=1
-                        ),
-                    ),
-                    showlegend=False,
-                    legendgroup=nm,
-                )
-            )
-            if dist.size and dist.size == ts.size:
-                fig_d.add_trace(
-                    go.Scatter(
-                        x=ts[change],
-                        y=dist[change],
-                        mode="markers",
-                        marker=dict(
-                            symbol="circle",
-                            size=7,
-                            color=col,
-                            line=dict(
-                                color="white", width=1
+            if change.size:
+                max_len = min(ts.size, vk.size)
+                idx = change[change < max_len]
+                if idx.size:
+                    fig_v.add_trace(
+                        go.Scatter(
+                            x=ts[idx],
+                            y=vk[idx],
+                            mode="markers",
+                            marker=dict(
+                                symbol="circle",
+                                size=7,
+                                color=col,
+                                line=dict(
+                                    color="white", width=1
+                                ),
                             ),
-                        ),
-                        showlegend=False,
-                        legendgroup=nm,
+                            showlegend=False,
+                            legendgroup=nm,
+                        )
                     )
-                )
+                    if fk.size and fk.size == ts.size:
+                        fig_f.add_trace(
+                            go.Scatter(
+                                x=ts[idx],
+                                y=fk[idx],
+                                mode="markers",
+                                marker=dict(
+                                    symbol="circle",
+                                    size=7,
+                                    color=col,
+                                    line=dict(
+                                        color="white", width=1
+                                    ),
+                                ),
+                                showlegend=False,
+                                legendgroup=nm,
+                            )
+                        )
+                    if dist.size and dist.size == ts.size:
+                        fig_d.add_trace(
+                            go.Scatter(
+                                x=ts[idx],
+                                y=dist[idx],
+                                mode="markers",
+                                marker=dict(
+                                    symbol="circle",
+                                    size=7,
+                                    color=col,
+                                    line=dict(
+                                        color="white", width=1
+                                    ),
+                                ),
+                                showlegend=False,
+                                legendgroup=nm,
+                            )
+                        )
 
     fig_v.update_xaxes(title="Time (s)")
     fig_v.update_yaxes(title="Vehicle speed (km/h)")
@@ -1925,11 +2083,26 @@ def update_map_and_time(
 
 # ---------- Add / clear sequences ----------
 
+
+@callback(
+    Output("shift-speeds", "disabled"),
+    Output("shift-rpm", "disabled"),
+    Input("shift-mode", "value"),
+)
+def toggle_shift_inputs(mode):
+    if mode == "rpm":
+        return True, False
+    return False, True
+
+
 @callback(
     Output("store-sequences", "data"),
     Input("btn-add-seq", "n_clicks"),
+    Input("btn-add-quarter", "n_clicks"),
     Input("btn-clear-seq", "n_clicks"),
+    State("shift-mode", "value"),
     State("shift-speeds", "value"),
+    State("shift-rpm", "value"),
     State("lambda", "value"),
     State("target-kmh", "value"),
     State("force-redline", "value"),
@@ -1941,8 +2114,11 @@ def update_map_and_time(
 )
 def sequences(
     add,
+    add_quarter,
     clear,
+    shift_mode,
     shift_txt,
+    shift_rpm,
     lam,
     target,
     force_redline,
@@ -1957,17 +2133,49 @@ def sequences(
     which = dash_ctx_trigger()
     if which == "btn-clear-seq":
         return []
-    if which != "btn-add-seq":
+    if which not in {"btn-add-seq", "btn-add-quarter"}:
         raise PreventUpdate
     if not v or not M:
         raise PreventUpdate
 
+    mode = str(shift_mode or "speed")
+    gear_list = list(v.get("gears", []))
+    Krpm2kmh = 0.0
     try:
-        shift_kmh = [float(x) for x in str(shift_txt).split()]
-    except Exception:
+        Krpm2kmh = (2 * np.pi * float(v.get("re", 0.0)) / 60.0) * 3.6 / float(
+            v.get("fd", 1.0)
+        )
+    except (TypeError, ValueError, ZeroDivisionError):
+        Krpm2kmh = 0.0
+
+    if mode == "rpm":
+        try:
+            shift_rpm_val = float(shift_rpm)
+        except (TypeError, ValueError):
+            shift_rpm_val = float(v.get("redline_rpm", 6500.0))
+        idle_rpm = float(v.get("idle_rpm", 800.0) or 800.0)
+        redline_rpm = float(v.get("redline_rpm", shift_rpm_val) or shift_rpm_val)
+        shift_rpm_val = min(max(shift_rpm_val, idle_rpm), redline_rpm)
         shift_kmh = []
+        if Krpm2kmh > 0.0 and gear_list:
+            for g in gear_list[:-1]:
+                try:
+                    shift_kmh.append((shift_rpm_val * Krpm2kmh) / float(g))
+                except (TypeError, ValueError, ZeroDivisionError):
+                    shift_kmh.append(0.0)
+        used_shift_rpm = shift_rpm_val
+    else:
+        try:
+            shift_kmh = [float(x) for x in str(shift_txt).split()]
+        except Exception:
+            shift_kmh = []
+        used_shift_rpm = None
 
     lam = float(lam or 0.7)
+    stop_distance = None
+    if which == "btn-add-quarter":
+        stop_distance = 402.0
+
     opts = dict(
         rho_fuel_kg_per_L=v["rho_fuel"],
         idle_rpm=v["idle_rpm"],
@@ -1977,20 +2185,44 @@ def sequences(
         force_redline=(1 in (force_redline or [])),
     )
 
+    if stop_distance is not None:
+        opts["stop_distance_m"] = stop_distance
+
+    target_val = float(target or 120.0)
+    if gear_list and Krpm2kmh > 0.0:
+        try:
+            top_speed = (float(v.get("redline_rpm", target_val)) * Krpm2kmh) / float(
+                gear_list[-1]
+            )
+        except (TypeError, ValueError, ZeroDivisionError):
+            top_speed = target_val
+        if stop_distance is not None:
+            target_val = max(target_val, top_speed)
+    else:
+        top_speed = target_val
+
     R = C.accel_fuel_to_speed_core(
         v,
         M,
-        float(target or 120.0),
+        target_val,
         shift_kmh,
         lam,
         opts,
     )
 
     idx = len(seqs or []) + 1
+    name = f"seq{idx}"
+    distance_markers = []
+    if stop_distance is not None:
+        name = f"{name} (402 m)"
+        distance_markers.append(float(stop_distance))
+
     entry = {
-        "name": f"seq{idx}",
+        "name": name,
         "lambda": lam,
         "shift_kmh": shift_kmh,
+        "shift_mode": mode,
+        "shift_rpm": used_shift_rpm,
         "target": target,
         "R": {
             k: (float(v) if np.isscalar(v) else v)
@@ -2008,6 +2240,7 @@ def sequences(
             k: (np.asarray(v).tolist())
             for k, v in R.get("trace", {}).items()
         },
+        "distance_markers": distance_markers,
     }
 
     return (seqs or []) + [entry]
