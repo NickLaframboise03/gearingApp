@@ -1,6 +1,7 @@
 
+import copy
+import json
 from pathlib import Path
-
 
 from typing import Dict, Any, List
 
@@ -140,6 +141,7 @@ BASE_DIR = Path(__file__).resolve().parent
 
 
 ENG_DIR  = BASE_DIR / "engines"
+VEHICLE_PROFILES_PATH = "vehicle_profiles.json"
 
 
 
@@ -293,6 +295,80 @@ def maps_from_state(vstate: Dict[str, Any], eng_state: Dict[str, Any]) -> Dict[s
     return out
 
 
+
+
+def load_vehicle_profiles() -> Dict[str, Any]:
+
+    path = BASE_DIR / VEHICLE_PROFILES_PATH
+
+    try:
+
+        raw = path.read_text(encoding="utf-8")
+
+        data = json.loads(raw)
+
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+
+        return {"profiles": []}
+
+    except Exception:
+
+        return {"profiles": []}
+
+
+    profiles = data.get("profiles", [])
+
+    if not isinstance(profiles, list):
+
+        profiles = []
+
+
+    cleaned: List[Dict[str, Any]] = []
+
+    for entry in profiles:
+
+        if not isinstance(entry, dict):
+
+            continue
+
+        name = str(entry.get("name", "")).strip()
+
+        vehicle = entry.get("vehicle")
+
+        if not name or not isinstance(vehicle, dict):
+
+            continue
+
+        engine_file = entry.get("engine_file")
+
+        engine_value = None if engine_file is None else str(engine_file)
+
+        cleaned.append(dict(name=name, vehicle=vehicle, engine_file=engine_value))
+
+
+    return {"profiles": cleaned}
+
+
+def save_vehicle_profiles(data: Dict[str, Any]) -> None:
+
+    profiles = data.get("profiles", [])
+
+    if not isinstance(profiles, list):
+
+        profiles = []
+
+    payload = {"profiles": profiles}
+
+
+    path = BASE_DIR / VEHICLE_PROFILES_PATH
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+
+    tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    tmp_path.replace(path)
 
 
 # ---------- Layout helpers ----------
@@ -504,7 +580,121 @@ def tab1_layout(v, eng):
                     f"Engines are auto-loaded from {ENG_DIR} (JSON library)."
 
 
-                ])
+                ]),
+
+
+                html.Div([
+
+
+                    html.Label("Vehicle profiles"),
+
+
+                    html.Div([
+
+
+                        dcc.Dropdown(
+
+
+                            id="vehicle-profile",
+
+
+                            options=[],
+
+
+                            value=None,
+
+
+                            clearable=True,
+
+
+                            placeholder="Select vehicle profile...",
+
+
+                            style={"width": "250px", "display": "inline-block"},
+
+
+                            className="dropdown-dark",
+
+
+                        ),
+
+
+                        dcc.Input(
+
+
+                            id="vehicle-profile-name",
+
+
+                            type="text",
+
+
+                            value="",
+
+
+                            placeholder="Profile name",
+
+
+                            style={"width": "250px", "marginLeft": "8px"},
+
+
+                        ),
+
+
+                    ], style={"marginTop": "8px"}),
+
+
+                    html.Div([
+
+
+                        dbc.Button(
+
+
+                            "Save profile",
+
+
+                            id="btn-save-profile",
+
+
+                            color="success",
+
+
+                            size="sm",
+
+
+                            className="me-2",
+
+
+                            style={"marginTop": "8px"},
+
+
+                        ),
+
+
+                        dbc.Button(
+
+
+                            "Delete profile",
+
+
+                            id="btn-delete-profile",
+
+
+                            color="danger",
+
+
+                            size="sm",
+
+
+                            style={"marginTop": "8px"},
+
+
+                        ),
+
+
+                    ]),
+
+
+                ], style={"marginTop": "16px"})
 
 
             ]), md=6)
@@ -816,6 +1006,8 @@ app.layout = html.Div([
     dcc.Store(id="store-sequences", data=[]),
 
     dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
+
+    dcc.Interval(id="iv-profiles", interval=500, n_intervals=0, max_intervals=1),
 
 
     dcc.Tabs(
@@ -1200,6 +1392,184 @@ def toggle_stall_disabled(auto_val):
 
 
 
+@callback(
+
+    Output("vehicle-profile", "options"),
+
+    Output("vehicle-profile", "value"),
+
+    Input("iv-profiles", "n_intervals"),
+
+    Input("btn-save-profile", "n_clicks"),
+
+    Input("btn-delete-profile", "n_clicks"),
+
+    State("vehicle-profile-name", "value"),
+
+    State("store-vehicle", "data"),
+
+    State("engine-select", "value"),
+
+    State("vehicle-profile", "value"),
+
+    State("store-engine", "data"),
+
+    prevent_initial_call=False
+
+)
+
+
+def manage_vehicle_profiles(_tick, n_save, n_delete, name, vehicle_data, engine_value, selected_value, eng_state):
+
+    triggered = dash_ctx_trigger()
+
+    data = load_vehicle_profiles()
+
+    profiles = data.get("profiles", [])
+
+    current_value = selected_value
+
+
+    if triggered == "btn-save-profile":
+
+        if not n_save or not name or not str(name).strip() or not vehicle_data:
+
+            raise PreventUpdate
+
+        trimmed = str(name).strip()
+
+        vehicle_payload = copy.deepcopy(vehicle_data)
+
+        try:
+
+            vehicle_payload["re"] = C.compute_tire_radius(vehicle_payload)
+
+            vehicle_payload = C.update_derived(vehicle_payload)
+
+        except Exception:
+
+            pass
+
+        engine_file = None if engine_value is None else str(engine_value)
+
+        if eng_state:
+
+            for item in eng_state.get("items", []):
+
+                if item.get("name") == engine_value:
+
+                    engine_file = item.get("source_file") or engine_file
+
+                    break
+
+        profile = {
+
+            "name": trimmed,
+
+            "vehicle": vehicle_payload,
+
+            "engine_file": engine_file,
+
+        }
+
+        new_profiles = []
+
+        replaced = False
+
+        for entry in profiles:
+
+            if entry.get("name") == trimmed:
+
+                new_profiles.append(profile)
+
+                replaced = True
+
+            else:
+
+                new_profiles.append(entry)
+
+        if not replaced:
+
+            new_profiles.append(profile)
+
+        save_vehicle_profiles({"profiles": new_profiles})
+
+        profiles = new_profiles
+
+        current_value = trimmed
+
+    elif triggered == "btn-delete-profile":
+
+        if not n_delete or not selected_value:
+
+            raise PreventUpdate
+
+        new_profiles = [entry for entry in profiles if entry.get("name") != selected_value]
+
+        if len(new_profiles) == len(profiles):
+
+            raise PreventUpdate
+
+        save_vehicle_profiles({"profiles": new_profiles})
+
+        profiles = new_profiles
+
+        current_value = None
+
+
+    options = [{"label": entry.get("name"), "value": entry.get("name")} for entry in profiles if entry.get("name")]
+
+    valid_values = {opt["value"] for opt in options}
+
+    if current_value not in valid_values:
+
+        current_value = None
+
+
+    return options, current_value
+
+
+@callback(
+    Output("store-vehicle", "data", allow_duplicate=True),
+    Output("vehicle-profile-name", "value"),
+    Input("vehicle-profile", "value"),
+    prevent_initial_call=True
+)
+
+
+def apply_vehicle_profile(profile_name):
+
+    if not profile_name:
+
+        return no_update, ""
+
+    data = load_vehicle_profiles()
+
+    for entry in data.get("profiles", []):
+
+        if entry.get("name") == profile_name:
+
+            vehicle = entry.get("vehicle")
+
+            if not isinstance(vehicle, dict):
+
+                raise PreventUpdate
+
+            vehicle_data = copy.deepcopy(vehicle)
+
+            try:
+
+                vehicle_data["re"] = C.compute_tire_radius(vehicle_data)
+
+                vehicle_data = C.update_derived(vehicle_data)
+
+            except Exception:
+
+                pass
+
+            return vehicle_data, profile_name
+
+    raise PreventUpdate
 
 
 # ---------- Engine dropdown / periodic rescan ----------
@@ -1207,93 +1577,159 @@ def toggle_stall_disabled(auto_val):
 
 @callback(
 
-
     Output("store-engine", "data"),
-
 
     Output("engine-select", "options"),
 
-
     Output("engine-select", "value"),
-
 
     Input("engine-select", "value"),
 
-
     Input("iv-scan", "n_intervals"),
 
+    Input("vehicle-profile", "value"),
 
     State("store-engine", "data"),
 
-
     prevent_initial_call=True
-
 
 )
 
 
-def engine_picker(selected_name, _tick, eng_state):
-
+def engine_picker(selected_name, _tick, profile_name, eng_state):
 
     if eng_state is None:
-
 
         eng_state = initial_engine_state()
 
 
-
     # periodic folder rescan (does not change active)
-
 
     try:
 
-
         scanned = EIO.scan_engines_folder(ENG_DIR)
 
+        known_names = {e["name"] for e in eng_state["items"]}
 
-        known = {e["name"] for e in eng_state["items"]}
-
+        known_sources = {e.get("source_file") for e in eng_state["items"] if e.get("source_file")}
 
         for e in scanned:
 
+            src = e.get("source_file")
 
-            if e["name"] not in known:
+            name = e.get("name")
 
+            if src and src in known_sources:
 
-                eng_state["items"].append(e)
+                continue
 
+            if name in known_names:
 
-                eng_state["names"].append(e["name"])
+                if src:
 
+                    known_sources.add(src)
 
-                known.add(e["name"])
+                continue
 
+            eng_state["items"].append(e)
+
+            eng_state["names"].append(name)
+
+            known_names.add(name)
+
+            if src:
+
+                known_sources.add(src)
 
     except Exception as ex:
-
 
         print("Scan failed:", ex)
 
 
+    triggered = dash_ctx_trigger()
 
-    # selection
+    if triggered == "vehicle-profile":
 
+        if profile_name:
 
-    names = eng_state.get("names", [])
+            data = load_vehicle_profiles()
 
+            profiles = data.get("profiles", [])
 
-    if selected_name in names:
+            target = next((p for p in profiles if p.get("name") == profile_name), None)
 
+            if target:
 
-        eng_state["active"] = names.index(selected_name)
+                desired = target.get("engine_file")
 
+                target_idx = None
+
+                items = eng_state.get("items", [])
+
+                if desired:
+
+                    for idx, item in enumerate(items):
+
+                        if item.get("source_file") == desired:
+
+                            target_idx = idx
+
+                            break
+
+                if target_idx is None and desired:
+
+                    for idx, item in enumerate(items):
+
+                        if item.get("name") == desired:
+
+                            target_idx = idx
+
+                            break
+
+                if target_idx is None and desired:
+
+                    candidate = ENG_DIR / desired
+
+                    if candidate.exists():
+
+                        try:
+
+                            eng = EIO.load_engine_json(candidate)
+
+                            existing_sources = {item.get("source_file") for item in items if item.get("source_file")}
+
+                            if eng.get("source_file") not in existing_sources:
+
+                                eng_state["items"].append(eng)
+
+                                eng_state["names"].append(eng.get("name"))
+
+                                items = eng_state["items"]
+
+                            target_idx = next((i for i, entry in enumerate(eng_state["items"]) if entry.get("source_file") == eng.get("source_file")), None)
+
+                        except Exception as ex:
+
+                            print(f"Failed to load engine '{desired}' for profile '{profile_name}':", ex)
+
+                if target_idx is not None:
+
+                    eng_state["active"] = target_idx
+
+                    selected_name = eng_state["names"][target_idx]
+
+    else:
+
+        names = eng_state.get("names", [])
+
+        if selected_name in names:
+
+            eng_state["active"] = names.index(selected_name)
 
 
     opts = [{"label": n, "value": n} for n in eng_state.get("names", [])]
 
-
     value = eng_state["names"][eng_state["active"]] if eng_state.get("names") else None
-
 
     return eng_state, opts, value
 
