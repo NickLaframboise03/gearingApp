@@ -56,23 +56,35 @@ def scan_engines_folder(folder: Union[str, Path]) -> List[Dict]:
 
     engines: List[Dict] = []
 
-    seen: set[str] = set()
+    seen_names: set[str] = set()
+
+    seen_sources: set[str] = set()
 
     def add_engine(E: Dict):
 
         name = str(E.get("name", "")).strip()
 
+        src = str(E.get("source_file", "")) if E.get("source_file") else ""
+
         if not name:
 
             return
 
-        if name in seen:
+        if src and src in seen_sources:
+
+            return
+
+        if name in seen_names:
 
             return
 
         engines.append(E)
 
-        seen.add(name)
+        seen_names.add(name)
+
+        if src:
+
+            seen_sources.add(src)
 
     for p in sorted(folder.glob("*.json")):
 
@@ -90,7 +102,9 @@ def scan_engines_folder(folder: Union[str, Path]) -> List[Dict]:
 
             e = parse_engine_m_file(p.read_text(encoding="utf-8", errors="ignore"), p.name)
 
-            save_engine_json(folder, e)
+            saved = save_engine_json(folder, e)
+
+            e["source_file"] = saved.name
 
             add_engine(e)
 
@@ -106,7 +120,9 @@ def scan_engines_folder(folder: Union[str, Path]) -> List[Dict]:
 
                 e = load_engine_mat(p)
 
-                save_engine_json(folder, e)
+                saved = save_engine_json(folder, e)
+
+                e["source_file"] = saved.name
 
                 add_engine(e)
 
@@ -118,19 +134,30 @@ def scan_engines_folder(folder: Union[str, Path]) -> List[Dict]:
 
 
 
-def save_engine_json(folder: Union[str, Path], engine: Dict):
+def save_engine_json(folder: Union[str, Path], engine: Dict) -> Path:
 
     folder = Path(folder); folder.mkdir(parents=True, exist_ok=True)
 
     name_sanitized = re.sub(r"[^A-Za-z0-9_.-]+", "_", engine.get("name", "engine"))
 
-    (folder / f"{name_sanitized}.json").write_text(json.dumps(_to_jsonable(engine), indent=2), encoding="utf-8")
+    target = folder / f"{name_sanitized}.json"
 
+    payload = dict(engine)
+
+    payload.pop("source_file", None)
+
+    target.write_text(json.dumps(_to_jsonable(payload), indent=2), encoding="utf-8")
+
+    return target
 
 
 def load_engine_json(path: Union[str, Path]) -> Dict:
 
-    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    p = Path(path)
+
+    data = json.loads(p.read_text(encoding="utf-8"))
+
+    data["source_file"] = p.name
 
     return normalize_engine_dict(data)
 
@@ -380,7 +407,7 @@ def normalize_engine_dict(E: Dict) -> Dict:
 
     converter = _normalize_converter_block(E.get("converter"))
 
-    return dict(
+    result = dict(
 
         name=str(E.get("name", "engine")),
 
@@ -401,6 +428,12 @@ def normalize_engine_dict(E: Dict) -> Dict:
         converter=converter,
 
     )
+
+    if "source_file" in E:
+
+        result["source_file"] = str(E["source_file"])
+
+    return result
 
 
 
