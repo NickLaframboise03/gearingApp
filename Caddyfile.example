@@ -1,0 +1,20 @@
+# Replace app.example.com with your host.
+app.example.com {
+  encode zstd gzip
+
+  # Cache static bundles aggressively (filenames are versioned).
+  @dash_static path /_dash-component-suites/*
+  header @dash_static Cache-Control "public, max-age=31536000, immutable"
+
+  # Let browser revalidate local assets quickly.
+  @local_assets path /assets/*
+  header @local_assets Cache-Control "public, max-age=300"
+
+  # Proxy to gunicorn upstream.
+  reverse_proxy 127.0.0.1:25564 {
+    transport http {
+      versions 1.1
+      keepalive 30s
+    }
+  }
+}

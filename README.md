@@ -15,7 +15,24 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Open http://127.0.0.1:8050
+Open http://127.0.0.1:25564
+
+## Production run (recommended behind Caddy)
+
+```bash
+./runapp.sh
+```
+
+`runapp.sh` uses `gunicorn` when available and falls back to `python app.py` otherwise.
+
+Environment knobs:
+- `PORT` (default `25564`)
+- `WEB_CONCURRENCY` (default `2`)
+- `GUNICORN_THREADS` (default `4`)
+- `TIMEOUT_SECONDS` (default `120`)
+- `INSTALL_DEPS=1` to run `pip install -r requirements.txt` before startup
+
+See `Caddyfile.example` for a reverse-proxy config with compression + static-cache headers.
 
 ## Engine files
 

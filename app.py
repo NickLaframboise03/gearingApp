@@ -1,7 +1,8 @@
 import copy
 import json
+import os
 from pathlib import Path
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 import numpy as np
 
@@ -25,6 +26,12 @@ DARK_MUTED = "#a2a9b4"
 DARK_AXIS = "#c9cdd3"
 
 pio.templates.default = "plotly_dark"
+
+ENGINE_SCAN_INTERVAL_MS = 60000
+MAX_LOAD_CURVES = 10
+GEARING_RPM_POINTS = 280
+GEARING_FORCE_POINTS = 420
+MAX_SEQUENCE_POINTS = 280
 
 
 def apply_dark(fig: go.Figure, height=None, title=None):
@@ -73,6 +80,107 @@ VEHICLE_PROFILES_PATH = "vehicle_profiles.json"
 
 # ---------- Defaults ----------
 
+
+def _to_jsonable(val):
+    if isinstance(val, np.ndarray):
+        return val.tolist()
+    if isinstance(val, dict):
+        return {kk: _to_jsonable(vv) for kk, vv in val.items()}
+    if isinstance(val, list):
+        return [_to_jsonable(vv) for vv in val]
+    return val
+
+
+def _engine_meta(E: Dict[str, Any]) -> Dict[str, Any]:
+    source = E.get("source_file")
+    return {
+        "name": str(E.get("name", "")).strip(),
+        "source_file": (None if source is None else str(source)),
+    }
+
+
+def _engine_signature(items: List[Dict[str, Any]]) -> Tuple[Tuple[str, str], ...]:
+    sig: List[Tuple[str, str]] = []
+    for item in items or []:
+        sig.append(
+            (
+                str(item.get("name", "")),
+                str(item.get("source_file", "") or ""),
+            )
+        )
+    return tuple(sig)
+
+
+def _engine_state_from_items(
+    items: List[Dict[str, Any]],
+    active_idx: int = 0,
+) -> Dict[str, Any]:
+    if not items:
+        return {"names": [], "items": [], "active": 0, "active_engine": None}
+
+    active_idx = int(max(0, min(active_idx, len(items) - 1)))
+    active_engine = _to_jsonable(items[active_idx])
+    compact = [_engine_meta(e) for e in items]
+    names = [e.get("name", "") for e in compact]
+    return {
+        "names": names,
+        "items": compact,
+        "active": active_idx,
+        "active_engine": active_engine,
+    }
+
+
+def _active_engine_from_state(eng_state: Dict[str, Any]) -> Dict[str, Any]:
+    if not eng_state:
+        raise KeyError("empty engine state")
+
+    active_engine = eng_state.get("active_engine")
+    if isinstance(active_engine, dict) and "fuel_map_gps" in active_engine:
+        return active_engine
+
+    items = eng_state.get("items", []) or []
+    if not items:
+        raise KeyError("missing engine items")
+
+    try:
+        active_idx = int(eng_state.get("active", 0))
+    except (TypeError, ValueError):
+        active_idx = 0
+    active_idx = max(0, min(active_idx, len(items) - 1))
+    candidate = items[active_idx]
+    if isinstance(candidate, dict) and "fuel_map_gps" in candidate:
+        return candidate
+
+    src = candidate.get("source_file") if isinstance(candidate, dict) else None
+    if src:
+        return _to_jsonable(EIO.load_engine_json(ENG_DIR / str(src)))
+    raise KeyError("unable to resolve active engine")
+
+
+def _normalize_loads(loads_txt: Any) -> List[float]:
+    try:
+        loads = [float(x) for x in str(loads_txt).strip().split()]
+    except Exception:
+        loads = [0.2, 0.4, 0.6, 0.8, 1.0]
+    loads = [min(1.0, max(0.0, v_)) for v_ in loads]
+    if not loads:
+        loads = [0.2, 0.4, 0.6, 0.8, 1.0]
+    if len(loads) > MAX_LOAD_CURVES:
+        idx = np.linspace(0, len(loads) - 1, MAX_LOAD_CURVES, dtype=int)
+        loads = [loads[i] for i in idx]
+    return loads
+
+
+def _decimate_xy(x, y, max_points=MAX_SEQUENCE_POINTS):
+    x = np.asarray(x)
+    y = np.asarray(y)
+    n = min(x.size, y.size)
+    if n <= max_points:
+        return x[:n], y[:n]
+    idx = np.linspace(0, n - 1, max_points, dtype=int)
+    return x[idx], y[idx]
+
+
 def default_vehicle() -> Dict[str, Any]:
     v = {
         "m": 1340.0,
@@ -110,31 +218,44 @@ def initial_engine_state() -> Dict[str, Any]:
                 seen.add(e["name"])
     except Exception as ex:
         print("Engine scan failed:", ex)
-    names = [e["name"] for e in items]
-    return {"names": names, "items": items, "active": 0}
+    return _engine_state_from_items(items, active_idx=0)
+
+
+def _scan_engine_items() -> List[Dict[str, Any]]:
+    items: List[Dict[str, Any]] = [EIO.load_builtin_engine()]
+    seen_names = {items[0].get("name")}
+    seen_sources = {
+        items[0].get("source_file")
+    } if items[0].get("source_file") else set()
+    scanned = EIO.scan_engines_folder(ENG_DIR)
+    for e in scanned:
+        name = e.get("name")
+        src = e.get("source_file")
+        if src and src in seen_sources:
+            continue
+        if name in seen_names:
+            if src:
+                seen_sources.add(src)
+            continue
+        items.append(e)
+        seen_names.add(name)
+        if src:
+            seen_sources.add(src)
+    return items
 
 
 def maps_from_state(vstate: Dict[str, Any], eng_state: Dict[str, Any]) -> Dict[str, Any]:
-    if not eng_state or not eng_state.get("items"):
+    if not eng_state:
         return {}
 
-    e = eng_state["items"][eng_state.get("active", 0)]
+    try:
+        e = _active_engine_from_state(eng_state)
+    except Exception:
+        return {}
     M = C.build_map_from_engine_struct(e)
     M = C.rebuild_maps(vstate, M)
 
-    out: Dict[str, Any] = {}
-
-    def _to_jsonable(val):
-        if isinstance(val, np.ndarray):
-            return val.tolist()
-        if isinstance(val, dict):
-            return {kk: _to_jsonable(vv) for kk, vv in val.items()}
-        return val
-
-    for k, val in M.items():
-        out[k] = _to_jsonable(val)
-
-    return out
+    return {k: _to_jsonable(val) for k, val in M.items()}
 
 
 # ---------- Vehicle profiles (load / save) ----------
@@ -473,14 +594,26 @@ def tab1_layout(v, eng):
                                                 placeholder="Select engine...",
                                                 className="dropdown-dark",
                                             ),
-                                            width=8,
+                                            width=7,
+                                        ),
+                                        dbc.Col(
+                                            dbc.Button(
+                                                "Refresh",
+                                                id="btn-refresh-engines",
+                                                color="secondary",
+                                                size="sm",
+                                            ),
+                                            width=3,
                                         ),
                                     ]
                                 ),
                                 html.Div(
                                     className="small-note",
                                     children=[
-                                        f"Engines are auto-loaded from {ENG_DIR} (JSON library)."
+                                        (
+                                            f"Engines are loaded from {ENG_DIR} "
+                                            f"and auto-rescanned every {ENGINE_SCAN_INTERVAL_MS // 1000}s."
+                                        )
                                     ],
                                 ),
                                 html.Div(
@@ -559,10 +692,11 @@ def tab2_layout(_v):
             html.Div(
                 [
                     html.Label("Loads λ (space-separated)"),
-                    dbc.Input(
+                    dcc.Input(
                         id="loads",
                         type="text",
                         value="0.2 0.4 0.6 0.8 1.0",
+                        debounce=True,
                         style={"width": "200px"},
                     ),
                     html.Span("  "),
@@ -747,10 +881,11 @@ def tab3_layout(v, _eng):
                     html.Div(
                         [
                             html.Label("Distance markers [m]:"),
-                            dbc.Input(
+                            dcc.Input(
                                 id="distance-markers",
                                 type="text",
                                 value="100 200 400",
+                                debounce=True,
                                 style={"width": "200px"},
                             ),
                         ],
@@ -867,7 +1002,11 @@ app.layout = html.Div(
         dcc.Store(id="store-engine", data=eng0),
         dcc.Store(id="store-maps", data=maps0),
         dcc.Store(id="store-sequences", data=[]),
-        dcc.Interval(id="iv-scan", interval=8000, n_intervals=0),
+        dcc.Interval(
+            id="iv-scan",
+            interval=ENGINE_SCAN_INTERVAL_MS,
+            n_intervals=0,
+        ),
         dcc.Interval(
             id="iv-profiles", interval=500, n_intervals=0, max_intervals=1
         ),
@@ -1235,41 +1374,35 @@ def apply_vehicle_profile(profile_name):
     Output("engine-select", "value"),
     Input("engine-select", "value"),
     Input("iv-scan", "n_intervals"),
+    Input("btn-refresh-engines", "n_clicks"),
     Input("vehicle-profile", "value"),
     State("store-engine", "data"),
     prevent_initial_call=True,
 )
-def engine_picker(selected_name, _tick, profile_name, eng_state):
+def engine_picker(selected_name, _tick, _refresh, profile_name, eng_state):
     if eng_state is None:
         eng_state = initial_engine_state()
 
-    # periodic folder rescan (does not change active)
     try:
-        scanned = EIO.scan_engines_folder(ENG_DIR)
-        known_names = {e["name"] for e in eng_state["items"]}
-        known_sources = {
-            e.get("source_file")
-            for e in eng_state["items"]
-            if e.get("source_file")
-        }
-        for e in scanned:
-            src = e.get("source_file")
-            name = e.get("name")
-            if src and src in known_sources:
-                continue
-            if name in known_names:
-                if src:
-                    known_sources.add(src)
-                continue
-            eng_state["items"].append(e)
-            eng_state["names"].append(name)
-            known_names.add(name)
-            if src:
-                known_sources.add(src)
+        items = _scan_engine_items()
     except Exception as ex:
         print("Scan failed:", ex)
+        items = []
 
     triggered = dash_ctx_trigger()
+    names = [e.get("name") for e in items]
+
+    if not names:
+        return (
+            {"names": [], "items": [], "active": 0, "active_engine": None},
+            [],
+            None,
+        )
+
+    active_idx = 0
+    if selected_name in names:
+        active_idx = names.index(selected_name)
+
     if triggered == "vehicle-profile":
         if profile_name:
             data = load_vehicle_profiles()
@@ -1281,7 +1414,6 @@ def engine_picker(selected_name, _tick, profile_name, eng_state):
             if target:
                 desired = target.get("engine_file")
                 target_idx = None
-                items = eng_state.get("items", [])
 
                 if desired:
                     for idx, item in enumerate(items):
@@ -1306,14 +1438,13 @@ def engine_picker(selected_name, _tick, profile_name, eng_state):
                                 if item.get("source_file")
                             }
                             if eng.get("source_file") not in existing_sources:
-                                eng_state["items"].append(eng)
-                                eng_state["names"].append(eng.get("name"))
-                                items = eng_state["items"]
+                                items.append(eng)
+                                names.append(eng.get("name"))
                             target_idx = next(
                                 (
                                     i
                                     for i, entry in enumerate(
-                                        eng_state["items"]
+                                        items
                                     )
                                     if entry.get("source_file")
                                     == eng.get("source_file")
@@ -1327,23 +1458,29 @@ def engine_picker(selected_name, _tick, profile_name, eng_state):
                             )
 
                 if target_idx is not None:
-                    eng_state["active"] = target_idx
-                    selected_name = eng_state["names"][target_idx]
-    else:
-        names = eng_state.get("names", [])
-        if selected_name in names:
-            eng_state["active"] = names.index(selected_name)
+                    active_idx = target_idx
 
-    opts = [
-        {"label": n, "value": n}
-        for n in eng_state.get("names", [])
-    ]
+    next_state = _engine_state_from_items(items, active_idx=active_idx)
+    opts = [{"label": n, "value": n} for n in next_state.get("names", [])]
     value = (
-        eng_state["names"][eng_state["active"]]
-        if eng_state.get("names")
+        next_state["names"][next_state["active"]]
+        if next_state.get("names")
         else None
     )
-    return eng_state, opts, value
+
+    old_items = eng_state.get("items", []) if isinstance(eng_state, dict) else []
+    old_active = eng_state.get("active") if isinstance(eng_state, dict) else None
+    old_value = None
+    if isinstance(old_active, int) and 0 <= old_active < len(old_items):
+        old_value = old_items[old_active].get("name")
+    if (
+        triggered == "iv-scan"
+        and _engine_signature(old_items) == _engine_signature(next_state["items"])
+        and old_value == value
+    ):
+        return no_update, no_update, no_update
+
+    return next_state, opts, value
 
 
 # ---------- Rebuild maps whenever vehicle or engine changes ----------
@@ -1370,7 +1507,7 @@ def rebuild_maps_store(v, eng):
     Input("store-vehicle", "data"),
     Input("store-maps", "data"),
     Input("btn-update-gear", "n_clicks"),
-    Input("loads", "value"),
+    State("loads", "value"),
 )
 def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     if active_tab != "tab2":
@@ -1389,7 +1526,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
     styles = ["solid", "dash", "dot", "dashdot", "longdash", "longdashdot"]
     Krpm2kmh = (2 * np.pi * v["re"] / 60.0) * 3.6 / v["fd"]
 
-    rpm_grid = np.linspace(0, v["redline_rpm"], 400)
+    rpm_grid = np.linspace(0, v["redline_rpm"], GEARING_RPM_POINTS)
     fig_speedrpm = go.Figure()
     for gi in range(nG):
         v_kmh = (rpm_grid * Krpm2kmh) / v["gears"][gi]
@@ -1413,16 +1550,16 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         title="Gear capability: vehicle speed vs engine RPM",
     )
 
-    rpm_grid2 = np.linspace(max(1, v["idle_rpm"]), v["redline_rpm"], 420)
+    rpm_grid2 = np.linspace(
+        max(1, v["idle_rpm"]),
+        v["redline_rpm"],
+        GEARING_RPM_POINTS,
+    )
     w_grid = rpm_grid2 * 2 * np.pi / 60
     Twot = np.maximum(0, T_WOT(w_grid))
     Tmot = T_CT(w_grid)
 
-    try:
-        loads = [float(x) for x in str(loads_txt).strip().split()]
-    except Exception:
-        loads = [0.2, 0.4, 0.6, 0.8, 1.0]
-    loads = [min(1.0, max(0.0, v_)) for v_ in loads]
+    loads = _normalize_loads(loads_txt)
 
     fig_torque = go.Figure()
     fig_accel = go.Figure()
@@ -1486,7 +1623,7 @@ def update_gearing(active_tab, v, M, _nclicks, loads_txt):
         title="Acceleration vs vehicle speed (per gear) at selected loads",
     )
 
-    v_all_kmh = np.linspace(0, v["top_speed_kmh"], 600)
+    v_all_kmh = np.linspace(0, v["top_speed_kmh"], GEARING_FORCE_POINTS)
     v_all_mps = v_all_kmh / 3.6
     R_all = C.F_roll(v, v_all_mps) + C.F_aero(v, v_all_mps)
     fig_force.add_trace(
@@ -1573,6 +1710,7 @@ def update_map_and_time(
                     if np.isfinite(m) and m >= 0.0
                 }
             )
+            markers = markers[:20]
         except Exception:
             markers = []
 
@@ -1773,10 +1911,11 @@ def update_map_and_time(
         rp = np.asarray(Tt.get("rpm", []))
         Te = np.asarray(Tt.get("T_engine_Nm", []))
         if rp.size and Te.size:
+            rp_plot, Te_plot = _decimate_xy(rp, Te)
             fig.add_trace(
                 go.Scatter(
-                    x=rp,
-                    y=Te,
+                    x=rp_plot,
+                    y=Te_plot,
                     mode="lines",
                     line=dict(color=col, width=2),
                     name=nm,
@@ -1829,10 +1968,11 @@ def update_map_and_time(
 
         if ts.size and vk.size:
             if ts.size == vk.size:
+                ts_plot, vk_plot = _decimate_xy(ts, vk)
                 fig_v.add_trace(
                     go.Scatter(
-                        x=ts,
-                        y=vk,
+                        x=ts_plot,
+                        y=vk_plot,
                         mode="lines",
                         line=dict(color=col, width=2),
                         name=nm,
@@ -1841,10 +1981,14 @@ def update_map_and_time(
                 )
             else:
                 common = min(ts.size, vk.size)
+                ts_plot, vk_plot = _decimate_xy(
+                    ts[:common],
+                    vk[:common],
+                )
                 fig_v.add_trace(
                     go.Scatter(
-                        x=ts[:common],
-                        y=vk[:common],
+                        x=ts_plot,
+                        y=vk_plot,
                         mode="lines",
                         line=dict(color=col, width=2),
                         name=nm,
@@ -1853,10 +1997,11 @@ def update_map_and_time(
                 )
 
         if ts.size and fk.size and ts.size == fk.size:
+            ts_plot, fk_plot = _decimate_xy(ts, fk)
             fig_f.add_trace(
                 go.Scatter(
-                    x=ts,
-                    y=fk,
+                    x=ts_plot,
+                    y=fk_plot,
                     mode="lines",
                     line=dict(color=col, width=2),
                     name=nm,
@@ -1885,10 +2030,11 @@ def update_map_and_time(
                     dist = np.zeros_like(ts)
 
         if dist.size and ts.size and dist.size == ts.size:
+            ts_plot, dist_plot = _decimate_xy(ts, dist)
             fig_d.add_trace(
                 go.Scatter(
-                    x=ts,
-                    y=dist,
+                    x=ts_plot,
+                    y=dist_plot,
                     mode="lines",
                     line=dict(color=col, width=2),
                     name=nm,
@@ -1931,7 +2077,7 @@ def update_map_and_time(
                     )
                 )
 
-            extra_markers = S.get("distance_markers", []) or []
+            extra_markers = (S.get("distance_markers", []) or [])[:5]
             for m in extra_markers:
                 try:
                     m_val = float(m)
@@ -2359,4 +2505,7 @@ def cruise_gear_options(v):
 # ---------- Run ----------
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=25560)
+    host = os.getenv("HOST", "0.0.0.0")
+    port = int(os.getenv("PORT", "25564"))
+    debug = os.getenv("DASH_DEBUG", "0") == "1"
+    app.run(debug=debug, host=host, port=port)
